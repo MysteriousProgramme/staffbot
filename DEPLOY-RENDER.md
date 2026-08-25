@@ -22,18 +22,46 @@ So there are two honest options.
 
 ### 1. Put the code on GitHub
 
+Render deploys from a Git repo — there is no "upload a zip" option. Two ways to get it there.
+
+#### Easiest: upload through the browser (no Git needed)
+
+1. Sign up at **github.com**.
+2. **New repository** → name it `staffbot` → set it to **Private** → Create.
+3. On the empty repo page click **uploading an existing file**.
+4. Extract the zip I sent, open the `staffbot` folder, select **everything inside it** and drag it into the browser.
+5. Commit.
+
+**Do not upload these**, even if you have them locally:
+
+| Skip | Why |
+|---|---|
+| `node_modules/` | Thousands of files; Render installs them itself |
+| `data/` | Your local database; Render keeps its own on the disk |
+| `.env` | **Your bot token.** Never put this in a repo. |
+
+The zip I send already excludes all three, so if you upload straight from the extracted zip you are fine.
+
+#### Or with Git, if you have it
+
 ```bash
 cd C:\Projects\staffbot
 git init
 git add .
 git commit -m "Staffbot"
+git branch -M main
+git remote add origin https://github.com/YOURNAME/staffbot.git
+git push -u origin main
 ```
 
-Make a **private** repo on GitHub, then follow its "push an existing repository" instructions.
+`.gitignore` already excludes `.env`, `data/` and `node_modules/`.
 
-> `.gitignore` already excludes `.env`, `data/` and `node_modules/`, so your token and database don't get pushed. Check that `.env` is genuinely absent from the repo before making it public — better still, keep it private.
+> Whichever route you take, open the repo on GitHub afterwards and confirm there is **no `.env` file listed**. If there is, delete it and reset your bot token immediately — a token in a repo is a token that's gone.
 
 ### 2. Create the service
+
+Render will ask for a card — a Starter worker is $7/mo plus $0.25 for the disk. The workspace itself (Hobby) is free.
+
 
 Render Dashboard → **New** → **Blueprint** → pick your repo. It reads `render.yaml` and sets up a background worker with a 1 GB disk mounted at `/var/data`.
 

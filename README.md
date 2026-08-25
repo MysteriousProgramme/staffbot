@@ -88,7 +88,10 @@ Then in Discord:
 
 **Running on your PC means the bot is only online while that window is open.** Tracking stops when you close it or shut down, so scores under-count.
 
-To run it 24/7, see **[DEPLOY-RENDER.md](DEPLOY-RENDER.md)**. Short version: Render's free tier cannot host this, because free instances have no persistent disk and the SQLite database would be wiped on every restart. A Starter worker plus a 1 GB disk is $7.25/month and needs no code changes.
+To run it 24/7:
+
+- **[DEPLOY-EC2.md](DEPLOY-EC2.md)** — best option. A real always-on Linux box, SQLite works unchanged, free for 12 months on the AWS free tier. Includes a one-shot installer, a systemd service and a backup script.
+- **[DEPLOY-RENDER.md](DEPLOY-RENDER.md)** — easier clicking, $7.25/month. Render's *free* tier cannot host this: free instances have no persistent disk, so the database would be wiped on every restart. A static site can't run it at all.
 
 ---
 
