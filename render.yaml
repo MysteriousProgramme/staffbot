@@ -1,0 +1,35 @@
+# Render Blueprint — deploys Staffbot as a background worker with a
+# persistent disk. Requires a PAID (Starter, $7/mo) instance: free instances
+# cannot mount a disk, and without a disk the SQLite database is destroyed on
+# every redeploy and restart, taking the entire staff history with it.
+#
+# Use: Render Dashboard > New > Blueprint > point at your repo.
+services:
+  - type: worker
+    name: staffbot
+    runtime: node
+    plan: starter
+    region: oregon              # pick the one nearest your players
+    branch: main
+
+    buildCommand: npm ci && npm run deploy
+    startCommand: npm start
+
+    # The database lives here, NOT in the repo folder.
+    disk:
+      name: staffbot-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: NODE_VERSION
+        value: "22"
+      # Set these three in the Render dashboard, never in this file.
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
