@@ -226,8 +226,8 @@ if (tk.enabled) {
 console.log(`\n${B}Sanity checks${X}`);
 const problems = [...problemsExtra];
 const keys = config.ranks.map((r) => r.key);
-for (const [name, val] of Object.entries(config.permissions)) {
-  if (name === 'overrideRoleIds') continue;
+for (const name of ['manageStaff', 'vouch', 'review']) {
+  const val = config.permissions[name];
   if (!keys.includes(val)) problems.push(`permissions.${name} = "${val}" is not one of: ${keys.join(', ')}`);
 }
 const allRoleIds = config.ranks.map((r) => r.roleId);

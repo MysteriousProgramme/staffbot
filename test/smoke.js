@@ -257,6 +257,43 @@ check('a Head Mod can promote up to Mod but not to Head Mod', () => {
   assert.ok(R.checkActionAllowed(hm, junior, hmIdx), 'must not allow another Head Mod');
 });
 
+check('an override role holder who also wears a rank role is NOT tracked as staff', () => {
+  const ov = config.permissions.overrideRoleIds[0];
+  const ownerWithRank = fakeMember([ov, R.ranks[1].roleId], 'owner-staff');
+  assert.strictEqual(R.isTracked(ownerWithRank), false, 'owner would be scored like a trial');
+  assert.strictEqual(R.authorityIndex(ownerWithRank), R.ranks.length, 'but must still outrank everyone');
+});
+
+check('an ordinary rank-holder IS tracked', () => {
+  assert.strictEqual(R.isTracked(fakeMember([R.ranks[1].roleId], 'plain')), true);
+});
+
+check('someone with no rank role is not tracked', () => {
+  assert.strictEqual(R.isTracked(fakeMember([], 'member')), false);
+});
+
+check('trackOverrides:true brings owners back into the measured set', () => {
+  const saved = config.permissions.trackOverrides;
+  config.permissions.trackOverrides = true;
+  const ov = config.permissions.overrideRoleIds[0];
+  const r = R.isTracked(fakeMember([ov, R.ranks[1].roleId], 'owner-staff'));
+  config.permissions.trackOverrides = saved;
+  assert.strictEqual(r, true);
+});
+
+check('override roles do NOT bypass each other', () => {
+  const [a, b] = config.permissions.overrideRoleIds;
+  const blocked = R.checkActionAllowed(fakeMember([a], 'one'), fakeMember([b], 'two'), 4);
+  assert.ok(blocked, 'an Owner must not be able to demote the Founder');
+});
+
+check('the Discord server owner outranks even override roles', () => {
+  const ov = config.permissions.overrideRoleIds[0];
+  const srvOwner = fakeMember([], 'owner', 'owner');
+  const holder = { ...fakeMember([ov], 'holder'), guild: { ownerId: 'owner' } };
+  assert.strictEqual(R.checkActionAllowed(srvOwner, holder, 4), null);
+});
+
 check('an override role holder can do what a Head Mod cannot', () => {
   const ovId = config.permissions.overrideRoleIds[0];
   assert.ok(ovId, 'no override roles configured');
@@ -281,10 +318,10 @@ check('enough people can reach the vouch minimum', () => {
   );
 });
 
-check('every permission key names a real rank', () => {
+check('every rank-naming permission names a real rank', () => {
   const keys = R.ranks.map((r) => r.key);
-  for (const [name, val] of Object.entries(config.permissions)) {
-    if (name === 'overrideRoleIds') continue;
+  for (const name of ['manageStaff', 'vouch', 'review']) {
+    const val = config.permissions[name];
     assert.ok(keys.includes(val), `permissions.${name} = "${val}" is not a rank key`);
   }
 });

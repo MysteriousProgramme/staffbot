@@ -47,12 +47,26 @@ module.exports = {
     vouch: 'headmod',          // who gets a vote on trial members
     review: 'headmod',         // /review, /note, /staffstats, /trial list, /link
 
-    // These bypass every rank check, including each other's.
+    // These bypass every rank check.
+    //
+    // They do NOT bypass each other: an Owner cannot demote the Founder, and
+    // vice versa. Everyone holding one of these sits at the same ceiling, and
+    // the "never act on someone at or above your own rank" rule still applies
+    // between them. Only the Discord server owner is above all of it.
     overrideRoleIds: [
       '1503657119843614720',   // Founder
       '1514544622423113809',   // Owner
       '1518522106739032156',   // Co-Owner
     ],
+
+    // Should people holding an override role be TRACKED as staff — measured,
+    // scored, expected to have a Minecraft name linked?
+    //
+    // Almost always no. Owners hold a rank role for the colour and the
+    // permissions, not because they are on a performance ladder. Left true,
+    // they clutter /link list, drag the staffing counts around and get
+    // scorecards nobody asked for.
+    trackOverrides: false,
   },
 
   // ----------------------------------------------------------

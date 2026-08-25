@@ -19,6 +19,7 @@ module.exports = {
     const members = await interaction.guild.members.fetch();
     let added = 0;
     let updated = 0;
+    let untracked = 0;
     const found = [];
 
     for (const member of members.values()) {
@@ -27,6 +28,18 @@ module.exports = {
       if (idx < 0) continue;
 
       const existing = db.getStaff(interaction.guildId, member.id);
+
+      // Owners and Founders often wear a rank role for the colour. They are
+      // not on the ladder, so drop them back out rather than scoring them.
+      if (!R.isTracked(member)) {
+        if (existing) {
+          db.removeStaff(interaction.guildId, member.id);
+          untracked++;
+          found.push(`− <@${member.id}> no longer tracked (holds an override role)`);
+        }
+        continue;
+      }
+
       const rankKey = R.ranks[idx].key;
 
       if (!existing) {
@@ -44,7 +57,9 @@ module.exports = {
       .setColor(config.colors.neutral)
       .setTitle('Sync complete')
       .setDescription(
-        `**${added}** newly registered, **${updated}** corrected.\n\n` +
+        `**${added}** newly registered, **${updated}** corrected` +
+          (untracked ? `, **${untracked}** dropped as leadership` : '') +
+          `.\n\n` +
           (found.length ? found.slice(0, 25).join('\n') : 'Everyone was already up to date.')
       )
       .setFooter({

@@ -25,9 +25,28 @@ function isOverride(member) {
   return config.permissions.overrideRoleIds.some((id) => member.roles.cache.has(id));
 }
 
-/** Effective authority level used for all comparisons. */
+/**
+ * Should this member be TRACKED as staff — measured, scored, expected to have
+ * a Minecraft name? Holding a rank role is not enough: an Owner who also wears
+ * the Staff role for the colour is leadership, not someone on a trial ladder.
+ */
+function isTracked(member) {
+  if (memberRankIndex(member) < 0) return false;
+  if (config.permissions.trackOverrides) return true;
+  return !isOverride(member);
+}
+
+/**
+ * Effective authority level used for all comparisons. Three tiers above the
+ * ladder:
+ *   ranks.length + 1  the Discord server owner — above absolutely everyone
+ *   ranks.length      override roles (Founder/Owner/Co-Owner) — above every
+ *                     rank, but NOT above each other
+ *   0..ranks.length-1 the ladder itself
+ */
 function authorityIndex(member) {
-  if (isOverride(member)) return ranks.length; // one above the top rank
+  if (member.guild?.ownerId === member.id) return ranks.length + 1;
+  if (isOverride(member)) return ranks.length;
   return memberRankIndex(member);
 }
 
@@ -86,6 +105,7 @@ async function applyRank(member, destinationIndex, reason) {
 
 module.exports = {
   ranks,
+  isTracked,
   rankByKey,
   indexOfKey,
   memberRankIndex,

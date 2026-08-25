@@ -27,7 +27,9 @@ Who can do what, out of the box:
 
 On top of that there's one hard rule the code enforces everywhere: **you can never act on someone at or above your own rank, and you can never place someone at your own rank.** So a Head Mod can promote people up to Mod, and only an override role can make someone a Head Mod.
 
-Your Owner / Founder / Co-Owner role IDs go in `permissions.overrideRoleIds` and bypass all of it, including each other.
+Your Owner / Founder / Co-Owner role IDs go in `permissions.overrideRoleIds` and bypass all of it — **except each other.** All three sit at the same ceiling, so an Owner cannot demote the Founder and vice versa. Only the Discord server owner is above everyone.
+
+**Leadership isn't measured.** If you hold an override role *and* a rank role for the colour, `trackOverrides: false` (the default) keeps you out of the tracked set entirely — no scorecard, no `/link` nag, no effect on staffing counts. You still outrank everyone. Set it to `true` if you genuinely want owners scored.
 
 > **Watch the vouch count.** `/vouch` needs `scoring.vouches.minimum` (2) *distinct* people, and only Head Mods and override-role holders can cast one. If too few people qualify, no trial can ever reach the minimum and every review card parks on **AWAITING VOUCHES** forever. Staffbot counts eligible people on startup and warns loudly if there aren't enough — either lower `permissions.vouch` or lower the minimum.
 

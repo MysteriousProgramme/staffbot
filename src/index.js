@@ -80,9 +80,11 @@ function validateConfig() {
     }
   }
 
+  // Only these permission settings name a rank. Everything else in that block
+  // (overrideRoleIds, trackOverrides) is a different kind of setting.
   const keys = config.ranks.map((r) => r.key);
-  for (const [name, key] of Object.entries(config.permissions)) {
-    if (name === 'overrideRoleIds') continue;
+  for (const name of ['manageStaff', 'vouch', 'review']) {
+    const key = config.permissions[name];
     if (!keys.includes(key)) problems.push(`permissions.${name} = "${key}" is not a rank key.`);
   }
 
