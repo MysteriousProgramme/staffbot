@@ -82,6 +82,18 @@ function buildReviewCard(guild, staffRow, user, { midpoint = false } = {}) {
   }
   embed.addFields({ name: 'Senior staff vouches', value: vouchText });
 
+  // Leave changes how the whole card should be read, so say so up top.
+  const loa = db.activeLoa(guild.id, staffRow.user_id);
+  const loaDays = db.loaDaysInWindow(guild.id, staffRow.user_id, from, to);
+  if (loa || loaDays) {
+    embed.addFields({
+      name: loa ? '🌙 Currently on leave' : '🌙 Was on leave during this period',
+      value: loa
+        ? `Back <t:${Math.floor(loa.end_at / 1000)}:R>. Their trial deadline was extended by the same amount — the numbers below cover a period they were away for, so read them gently.`
+        : `**${loaDays} day${loaDays === 1 ? '' : 's'}** of this window were leave. The deadline was extended to compensate, but anything time-based below still includes those days.`,
+    });
+  }
+
   // When they're actually around, at a glance (UTC).
   const bar = observe.coverageBar(guild.id, staffRow.user_id, from, to);
   if (bar) {

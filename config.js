@@ -257,6 +257,34 @@ module.exports = {
   },
 
   // ----------------------------------------------------------
+  // 4b. WEEKLY DIGEST
+  // ----------------------------------------------------------
+  // Posted to the reviews channel. Everything in it is something the bot
+  // already knows and nobody is asking it — trials about to expire, staff who
+  // have gone quiet, tickets sitting unclaimed, hours with nobody around.
+  digest: {
+    enabled: true,
+
+    dayOfWeek: 1,        // 0 Sunday … 1 Monday
+    hourUTC: 9,
+    windowDays: 7,
+
+    // Flag a trial this many days before its deadline, so vouches get in.
+    trialWarningDays: 3,
+    // Someone unseen this long is worth asking about. Anyone on /loa is skipped.
+    quietAfterDays: 10,
+
+    // Include the score leaderboard in the digest? OFF by default. The digest
+    // goes to a channel your whole team may read, and a visible ranking turns
+    // the metrics into a competition — which is precisely how they get farmed.
+    // /leaderboard stays available to Head Mods either way.
+    includeLeaderboard: false,
+
+    // Ping a role when it posts. null for quiet.
+    pingRoleId: null,
+  },
+
+  // ----------------------------------------------------------
   // 5. TRIAL SETTINGS
   // ----------------------------------------------------------
   trial: {

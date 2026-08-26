@@ -33,6 +33,8 @@ const { computeScore, summariseVouches, verdict } = require('../src/scoring');
 const ticketWatch = require('../src/ticketWatch');
 const gameChat = require('../src/gameChat');
 const observe = require('../src/observe');
+const team = require('../src/team');
+const digest = require('../src/digest');
 check('every module requires cleanly', () => {
   assert.ok(config.ranks.length > 0);
   assert.ok(typeof ticketWatch.handleMessage === 'function');
@@ -808,6 +810,102 @@ check('the coverage bar renders 24 slots', () => {
 });
 
 // ---------------------------------------------------------------
+console.log('\nLeave of absence');
+const LU = 'loauser';
+
+check('starting leave records it and it reads back as active', () => {
+  db.setRank(G, LU, R.ranks[0].key, 'actor');
+  const l = db.startLoa(G, LU, 7, 'exams', 'actor');
+  assert.ok(l);
+  assert.ok(db.activeLoa(G, LU));
+  assert.ok(l.end_at > Date.now());
+});
+
+check('leave days overlapping a window are counted', () => {
+  const d = db.loaDaysInWindow(G, LU, Date.now() - 7 * 86400000, Date.now() + 7 * 86400000);
+  assert.ok(d >= 6 && d <= 7, `expected ~7, got ${d}`);
+});
+
+check('someone on leave is not reported as quiet', () => {
+  const quiet = team.quiet(G, 1);
+  assert.ok(!quiet.find((q) => q.userId === LU), 'a person on leave was chased for being inactive');
+});
+
+check('ending leave clears it, and they become chaseable again', () => {
+  db.endLoa(db.activeLoa(G, LU).id);
+  assert.strictEqual(db.activeLoa(G, LU), undefined);
+  assert.ok(team.quiet(G, 1).find((q) => q.userId === LU), 'should be visible once leave ends');
+});
+
+check('expired leave is closed automatically', () => {
+  const l = db.startLoa(G, LU, 1, 'short', 'actor');
+  db.db.prepare('UPDATE loa SET end_at = ? WHERE id = ?').run(Date.now() - 1000, l.id);
+  db.expireLoa();
+  assert.strictEqual(db.activeLoa(G, LU), undefined);
+});
+
+// ---------------------------------------------------------------
+console.log('\nTeam views');
+const TEAM = ['t-alice', 't-bob', 't-carol'];
+
+check('the leaderboard ranks tracked staff by score', () => {
+  db.setRank(G, TEAM[0], R.ranks[1].key, 'a');
+  db.setRank(G, TEAM[1], R.ranks[0].key, 'a');
+  db.bumpMetric(G, TEAM[0], 'ticketsHandled', 8);
+  db.bumpMetric(G, TEAM[0], 'inGameActivity', 80);
+  db.bumpMetric(G, TEAM[1], 'ticketsHandled', 1);
+  const board = team.leaderboard(G, Date.now() - 30 * 86400000, Date.now());
+  const a = board.findIndex((r) => r.userId === TEAM[0]);
+  const b = board.findIndex((r) => r.userId === TEAM[1]);
+  assert.ok(a < b, 'the more active person should rank higher');
+  assert.ok(board[a].score > board[b].score);
+});
+
+check('every leaderboard row names its weakest metric', () => {
+  const board = team.leaderboard(G, Date.now() - 30 * 86400000, Date.now());
+  for (const r of board) assert.ok(r.weakest?.label, `${r.userId} has no weakest metric`);
+});
+
+check('coverage returns 24 hourly slots', () => {
+  const H = (h) => Date.now() - h * 3600000;
+  [1, 2, 3, 14, 15].forEach((h, i) => db.bumpPresence(G, TEAM[0], 'c' + i, H(h)));
+  const c = team.coverage(G, Date.now() - 14 * 86400000, Date.now());
+  assert.strictEqual(c.hours.length, 24);
+  assert.strictEqual([...c.bar].length, 24);
+});
+
+check('hours with nobody around are reported as gaps', () => {
+  const c = team.coverage(G, Date.now() - 14 * 86400000, Date.now());
+  assert.ok(c.gaps.length > 0, 'a sparse week should have gaps');
+  for (const g of c.gaps) assert.ok(g.end >= g.start);
+});
+
+check('a gap spanning midnight is reported once, not twice', () => {
+  const c = team.coverage(G, Date.now() - 14 * 86400000, Date.now());
+  const wrapped = c.gaps.filter((g) => g.end >= 24);
+  assert.ok(wrapped.length <= 1, 'midnight wrap produced two gaps');
+});
+
+check('the digest builds without a live Discord connection', () => {
+  const { embed } = digest.build({ id: G, name: 'Test' });
+  const j = embed.toJSON();
+  assert.ok(j.title.includes('Staff digest'));
+  assert.ok(j.fields?.length || j.description, 'digest was completely empty');
+});
+
+check('the digest leaves the leaderboard out unless asked', () => {
+  const saved = config.digest.includeLeaderboard;
+  config.digest.includeLeaderboard = false;
+  const off = digest.build({ id: G, name: 'T' }).embed.toJSON();
+  config.digest.includeLeaderboard = true;
+  const on = digest.build({ id: G, name: 'T' }).embed.toJSON();
+  config.digest.includeLeaderboard = saved;
+  const has = (j) => (j.fields ?? []).some((f) => f.name.includes('Scores'));
+  assert.ok(!has(off), 'leaderboard appeared when switched off');
+  assert.ok(has(on), 'leaderboard missing when switched on');
+});
+
+// ---------------------------------------------------------------
 // cleanup
 for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets']) {
   db.db.exec(`DELETE FROM ${t} WHERE guild_id='${G}'`);
@@ -815,6 +913,7 @@ for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets']) {
 db.db.exec("DELETE FROM ticket_participants WHERE channel_id LIKE 'chan-%'");
 db.db.exec(`DELETE FROM game_links WHERE guild_id='${G}'`);
 db.db.exec(`DELETE FROM presence WHERE guild_id='${G}'`);
+db.db.exec(`DELETE FROM loa WHERE guild_id='${G}'`);
 db.db.exec(`DELETE FROM conduct WHERE guild_id='${G}'`);
 
 console.log(failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) FAILED.\n`);

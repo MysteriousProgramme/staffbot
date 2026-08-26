@@ -54,6 +54,7 @@ const gameChat = require('./gameChat');
 const trialScheduler = require('./trialScheduler');
 const startupChecks = require('./startupChecks');
 const observe = require('./observe');
+const digest = require('./digest');
 
 // ---- sanity check the config before we waste time connecting ----
 function validateConfig() {
@@ -139,14 +140,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await command.execute(interaction);
   } catch (error) {
     console.error(`[commands] ${interaction.commandName} threw:`, error);
+
+    // Show the actual message. "Check the console" is useless to the person
+    // standing in Discord, and on a hosted box the console is an SSH session
+    // away.
+    const detail = String(error?.message ?? error).slice(0, 300);
     const payload = {
-      content: 'Something went wrong running that. The error is in the bot console.',
+      content: `Something went wrong running \`/${interaction.commandName}\`:\n\`\`\`\n${detail}\n\`\`\``,
       flags: MessageFlags.Ephemeral,
     };
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(payload).catch(() => {});
-    } else {
-      await interaction.reply(payload).catch(() => {});
+    try {
+      if (interaction.deferred && !interaction.replied) await interaction.editReply({ content: payload.content });
+      else if (interaction.replied) await interaction.followUp(payload);
+      else await interaction.reply(payload);
+    } catch (e) {
+      console.error('[commands] could not report the error back:', e.message);
     }
   }
 });
@@ -160,6 +168,7 @@ client.once(Events.ClientReady, (c) => {
   trialScheduler.start(c);
   gameChat.report(c);
   observe.startPurge();
+  digest.start(c);
   startupChecks.run(c).catch((e) => console.error('[startup]', e));
 });
 

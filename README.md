@@ -114,6 +114,11 @@ To run it 24/7:
 | `/conduct user: [lines:]` | Head Mod+ | Read a sample of what they've actually been saying |
 | `/link set user: ign:` | Head Mod+ | Map a Minecraft username to a Discord account |
 | `/link list` | Head Mod+ | Every link, and which staff are missing one |
+| `/loa start user: days:` | Head Mod+ | Put someone on leave — pauses the clock, extends their trial |
+| `/loa end user:` \| `/loa list` | Head Mod+ | Bring them back / see who's away |
+| `/coverage [days:]` | Head Mod+ | When the team is around, and the hours nobody covers |
+| `/leaderboard [days:]` | Head Mod+ | Staff ranked by score, with what the bottom is missing |
+| `/digest [preview:]` | Head Mod+ | Post the weekly digest now |
 | `/sync` | Head Mod+ | Register existing role-holders into the database |
 
 ### Where rank changes go
@@ -272,6 +277,55 @@ The bridge channel is excluded from ordinary message tracking, so the bridge bot
 ### If the bridge isn't set up
 
 `inGameActivity` **skips itself** rather than scoring everyone 0 — the other metrics reweight to fill 100%. Same mechanism as response time. So you can turn `gameChat.enabled` off and nothing else breaks.
+
+---
+
+## Keeping the team healthy
+
+Three views that read data already being collected, plus one that runs itself.
+
+### `/loa` — leave of absence
+
+Someone takes exams for a fortnight and their metrics crater through no fault of their own. `/loa start user:@Jamie days:14 reason:exams` fixes that:
+
+- Their **trial deadline moves back by the same number of days**, so they get their full run of active days rather than a fortnight half-spent revising
+- They stop appearing in the "gone quiet" list
+- Their review card carries a leave banner, so nobody reads a thin scorecard as slacking
+- They get a DM saying none of it counts against them
+
+Leave expires on its own; `/loa end` brings someone back early (they keep the extra trial days).
+
+Without this, the scoring system quietly punishes people for having lives — which is exactly how a team stops trusting it.
+
+### `/coverage` — the hours nobody is around
+
+```
+Team coverage — last 14 days
+`          ███        ███`
+`0     6     12    18  23`
+
+⚠️ 2 gaps with nobody around
+00:00–10:00 (10h) · 13:00–21:00 (8h)
+```
+
+For an SMP with players across timezones this is the most actionable hiring information there is: don't hire another moderator for your busiest hour, hire one for the ten-hour hole.
+
+### `/leaderboard` — scores, ranked
+
+Ephemeral by default and Head Mod+ only, so it isn't a public scoreboard. It also names **what the bottom of the table is actually missing**, because "last place" on its own is not something you can act on.
+
+> A leaderboard is the one feature here that can make things worse. A visible ranking turns your metrics into a competition, and competitions get gamed — you'd be handing the team a scoreboard for the exact numbers you told them not to farm. Keeping it private to leadership is what makes it safe.
+
+### The weekly digest
+
+Posts to your reviews channel every Monday 09:00 UTC. Everything in it is something the bot already knew and nobody was asking:
+
+- Trials ending within 3 days, and any waiting on a decision
+- Staff unseen for 10+ days (people on leave excluded)
+- Tickets unclaimed, or open with no staff reply
+- Coverage gaps
+
+`/digest preview:true` shows it to you without posting. `digest.includeLeaderboard` adds the scores — **off by default**, since the digest lands in a channel your team may read.
 
 ---
 

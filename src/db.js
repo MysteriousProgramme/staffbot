@@ -87,6 +87,20 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_tickets_open ON tickets (guild_id, state);
 
+  -- Leave of absence. While one is open the person is not chased for being
+  -- quiet, and their trial deadline is pushed back by the same number of days.
+  CREATE TABLE IF NOT EXISTS loa (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    start_at   INTEGER NOT NULL,
+    end_at     INTEGER NOT NULL,
+    reason     TEXT,
+    created_by TEXT,
+    state      TEXT NOT NULL DEFAULT 'active'
+  );
+  CREATE INDEX IF NOT EXISTS idx_loa_user ON loa (guild_id, user_id, state);
+
   -- Where and when each staff member is actually present. One row per
   -- person/day/channel/hour, so breadth and coverage are just DISTINCT counts.
   CREATE TABLE IF NOT EXISTS presence (
@@ -264,6 +278,38 @@ const stmts = {
   claimsSeen: db.prepare(
     `SELECT COUNT(*) AS n FROM tickets WHERE guild_id = ? AND claimed_by IS NOT NULL`
   ),
+
+  // ---- leave of absence ----
+  startLoa: db.prepare(`
+    INSERT INTO loa (guild_id, user_id, start_at, end_at, reason, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  activeLoa: db.prepare(
+    `SELECT * FROM loa WHERE guild_id = ? AND user_id = ? AND state = 'active' ORDER BY end_at DESC LIMIT 1`
+  ),
+  listActiveLoa: db.prepare(`SELECT * FROM loa WHERE guild_id = ? AND state = 'active' ORDER BY end_at`),
+  endLoa: db.prepare(`UPDATE loa SET state = 'ended', end_at = ? WHERE id = ?`),
+  expireLoa: db.prepare(`UPDATE loa SET state = 'ended' WHERE state = 'active' AND end_at < ?`),
+  loaDaysInWindow: db.prepare(`
+    SELECT COALESCE(SUM(MIN(end_at, @to) - MAX(start_at, @from)), 0) AS ms
+    FROM loa WHERE guild_id = @guild AND user_id = @user AND end_at > @from AND start_at < @to
+  `),
+
+  // ---- whole-team queries (leaderboard, coverage) ----
+  allTrackedMetrics: db.prepare(`
+    SELECT user_id, metric, SUM(value) AS total FROM metrics
+    WHERE guild_id = ? AND day >= ? AND day <= ?
+    GROUP BY user_id, metric
+  `),
+  teamHourHistogram: db.prepare(`
+    SELECT hour, COUNT(DISTINCT user_id) AS people, SUM(messages) AS messages
+    FROM presence WHERE guild_id = ? AND day >= ? AND day <= ?
+    GROUP BY hour ORDER BY hour
+  `),
+  lastSeen: db.prepare(`
+    SELECT user_id, MAX(day) AS day FROM presence
+    WHERE guild_id = ? GROUP BY user_id
+  `),
 
   // ---- presence (breadth + coverage) ----
   bumpPresence: db.prepare(`
@@ -444,6 +490,42 @@ module.exports = {
 
   /** Have we ever successfully detected a Ticket King claim? */
   claimsSeen: (guildId) => stmts.claimsSeen.get(guildId).n,
+
+  // ---------------- leave of absence ----------------
+  startLoa(guildId, userId, days, reason, by) {
+    const now_ = now();
+    stmts.startLoa.run(guildId, userId, now_, now_ + days * 86400000, reason ?? null, by ?? null);
+    return stmts.activeLoa.get(guildId, userId);
+  },
+  activeLoa: (g, u) => stmts.activeLoa.get(g, u),
+  listActiveLoa: (g) => stmts.listActiveLoa.all(g),
+  endLoa(id) {
+    stmts.endLoa.run(now(), id);
+  },
+  /** Close out any LOA whose end date has passed. Returns how many. */
+  expireLoa: () => stmts.expireLoa.run(now()).changes,
+  /** Days of LOA overlapping a window — used to explain a quiet scorecard. */
+  loaDaysInWindow(guild, user, from, to) {
+    const ms = stmts.loaDaysInWindow.get({ guild, user, from, to })?.ms ?? 0;
+    return Math.max(0, Math.round(ms / 86400000));
+  },
+
+  // ---------------- whole-team ----------------
+  allTrackedMetrics(guildId, from, to) {
+    const rows = stmts.allTrackedMetrics.all(guildId, dayKey(from), dayKey(to));
+    const byUser = new Map();
+    for (const r of rows) {
+      if (!byUser.has(r.user_id)) byUser.set(r.user_id, {});
+      byUser.get(r.user_id)[r.metric] = r.total;
+    }
+    return byUser;
+  },
+  teamHourHistogram: (g, from, to) => stmts.teamHourHistogram.all(g, dayKey(from), dayKey(to)),
+  lastSeen(guildId) {
+    const map = new Map();
+    for (const r of stmts.lastSeen.all(guildId)) map.set(r.user_id, r.day);
+    return map;
+  },
 
   // ---------------- presence ----------------
   bumpPresence(guildId, userId, channelId, ts = Date.now()) {

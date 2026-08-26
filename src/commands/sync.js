@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const config = require('../../config');
 const db = require('../db');
 const R = require('../ranks');
@@ -14,7 +14,7 @@ module.exports = {
       return err(interaction, `You need to be ${R.rankByKey(config.permissions.manageStaff)?.name} or above to run this.`);
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const members = await interaction.guild.members.fetch();
     let added = 0;

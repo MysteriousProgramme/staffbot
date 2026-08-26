@@ -2,50 +2,46 @@ const { EmbedBuilder, MessageFlags } = require('discord.js');
 const config = require('../config');
 
 function err(interaction, message) {
-  const payload = {
-    embeds: [new EmbedBuilder().setColor(config.colors.demote).setDescription(`⛔ ${message}`)],
-    flags: MessageFlags.Ephemeral,
-  };
-  return interaction.replied || interaction.deferred
-    ? interaction.followUp(payload)
-    : interaction.reply(payload);
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.demote)
+    .setDescription(`⛔ ${message}`);
+  return respond(interaction, embed, true);
 }
 
 function ok(interaction, embed, { ephemeral = false } = {}) {
-  const payload = { embeds: [embed] };
-  if (ephemeral) payload.flags = MessageFlags.Ephemeral;
-  return interaction.replied || interaction.deferred
-    ? interaction.followUp(payload)
-    : interaction.reply(payload);
-}
-
-async function logAction(guild, embed) {
-  const id = config.channels.staffLog;
-  if (!id) return;
-  try {
-    const ch = await guild.channels.fetch(id);
-    if (ch?.isTextBased()) await ch.send({ embeds: [embed] });
-  } catch (e) {
-    console.error('[log] could not post to staff log channel:', e.message);
-  }
+  return respond(interaction, embed, ephemeral);
 }
 
 /**
- * Public staff-movements post. Deliberately separate from logAction():
- * the staff log is an internal audit trail (reasons, demotions, vouch
- * activity), this is a member-facing announcement. Nothing sensitive
- * should ever be passed in here.
+ * One place that knows how to answer an interaction, whatever state it is in.
+ *
+ * This matters: after deferReply() the correct call is editReply(), NOT
+ * reply() (already answered) and NOT followUp() (that posts a second message
+ * and, on a deferred interaction, leaves the original "thinking" state
+ * dangling). Getting this wrong throws InteractionAlreadyReplied, which
+ * surfaces to the user as a useless "something went wrong".
+ *
+ * Note also that ephemerality is fixed at defer time — editReply cannot
+ * change it, so the flag is only meaningful on a fresh reply.
  */
-async function announce(guild, payload) {
-  const a = config.announcements;
-  if (!a?.channelId) return;
-  try {
-    const ch = await guild.channels.fetch(a.channelId);
-    if (!ch?.isTextBased()) return;
-    await ch.send(payload);
-  } catch (e) {
-    console.error('[announce] could not post to announcements channel:', e.message);
+function respond(interaction, embed, ephemeral) {
+  const payload = { embeds: [embed] };
+
+  if (interaction.deferred && !interaction.replied) {
+    return interaction.editReply(payload).catch((e) => {
+      console.error('[respond] editReply failed:', e.message);
+    });
   }
+  if (interaction.replied) {
+    if (ephemeral) payload.flags = MessageFlags.Ephemeral;
+    return interaction.followUp(payload).catch((e) => {
+      console.error('[respond] followUp failed:', e.message);
+    });
+  }
+  if (ephemeral) payload.flags = MessageFlags.Ephemeral;
+  return interaction.reply(payload).catch((e) => {
+    console.error('[respond] reply failed:', e.message);
+  });
 }
 
 /**
@@ -79,6 +75,38 @@ function receipt(interaction, title, { announced = false } = {}) {
 
 const D_ITALIC = (s) => `_${s}_`;
 
+/**
+ * Full internal record. No-ops when channels.staffLog is null, which is the
+ * default now — the reason still lives in the audit table and their DM.
+ */
+async function logAction(guild, embed) {
+  const id = config.channels.staffLog;
+  if (!id) return;
+  try {
+    const ch = await guild.channels.fetch(id);
+    if (ch?.isTextBased()) await ch.send({ embeds: [embed] });
+  } catch (e) {
+    console.error('[log] could not post to staff log channel:', e.message);
+  }
+}
+
+/**
+ * Public staff-movements post. Deliberately separate from logAction():
+ * that one is an internal audit trail, this is member-facing. Nothing
+ * sensitive should ever be passed in here.
+ */
+async function announce(guild, payload) {
+  const a = config.announcements;
+  if (!a?.channelId) return;
+  try {
+    const ch = await guild.channels.fetch(a.channelId);
+    if (!ch?.isTextBased()) return;
+    await ch.send(payload);
+  } catch (e) {
+    console.error('[announce] could not post to announcements channel:', e.message);
+  }
+}
+
 async function postToReviews(guild, payload) {
   const id = config.channels.reviews;
   if (!id) return null;
@@ -101,4 +129,4 @@ async function tryDM(user, payload) {
   }
 }
 
-module.exports = { err, ok, receipt, logAction, announce, postToReviews, tryDM };
+module.exports = { err, ok, respond, receipt, logAction, announce, postToReviews, tryDM };
