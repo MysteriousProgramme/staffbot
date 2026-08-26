@@ -389,6 +389,98 @@ module.exports = {
   },
 
   // ----------------------------------------------------------
+  // 6b. STANDING — everyone ABOVE Trial Staff
+  // ----------------------------------------------------------
+  // A trial asks one question, once: do we keep them? Everything in section 6
+  // answers that question and then goes quiet. A Staff member two months in
+  // is asked a different pair of questions, continuously:
+  //
+  //     Are they still doing the job?      → the HOLD bar
+  //     Are they ready for the next one?   → the PROMOTE bar
+  //
+  // So ranked staff are scored on a ROLLING window instead of a trial window,
+  // against targets appropriate to their rank, with two bars instead of one.
+  // /review switches to this automatically for anyone not on a trial.
+  //
+  // IMPORTANT: these targets are for `windowDays` (30), NOT for a 14-day
+  // trial. Reusing the section 6 numbers here would make every ranked staff
+  // member look like a superstar. They are separate on purpose.
+  standing: {
+    enabled: true,
+
+    // The rolling window. 30 days is long enough that one quiet week doesn't
+    // read as a collapse, short enough to still be about now.
+    windowDays: 30,
+
+    // Also score the PREVIOUS window of the same length and show the change.
+    // Direction of travel matters more than the absolute number — someone at
+    // 62 and climbing is in a different conversation to someone at 62 and
+    // falling.
+    compareToPrevious: true,
+
+    // Under this = they are not currently holding up their rank.
+    holdBar: 45,
+    // At or above this = worth talking about the next rank.
+    promoteBar: 80,
+
+    // Never flag someone as drifting off ONE bad window. This many consecutive
+    // windows under the hold bar before the digest says anything.
+    driftStreak: 2,
+
+    // Anyone whose window was this much leave is not flagged at all — the
+    // numbers are measuring their absence, which you already knew about.
+    loaGraceFraction: 0.25,
+
+    // How long someone must have HELD a rank before promotion out of it is
+    // even considered. Time in rank is not a metric, but it is a fact, and
+    // promoting someone three weeks into a rank teaches your team that the
+    // ladder is climbed by being noticed rather than by doing the work.
+    // Set a rank to null (or leave it out) to disable the check for it.
+    minTenureDays: {
+      staff: 30,
+      headstaff: 45,
+      mod: 60,
+      headmod: null,      // top of the ladder — nothing to be promoted into
+    },
+
+    // Per-rank targets and weights. Both are optional per rank and per metric:
+    // anything you leave out falls back to the section 6 value.
+    //
+    // Read the weights as "what this rank is actually for". A Staff member is
+    // judged mostly on ticket volume and turning up. A Head Mod barely is —
+    // by then the job is being present for the team, and someone who is still
+    // grinding tickets instead of running the team is doing the rank below.
+    profiles: {
+      staff: {
+        targets: { ticketsHandled: 18, activeDays: 18, inGameActivity: 180, channelBreadth: 8,  modActions: 12, responseSpeed: 20, staffPresence: 60,  publicActivity: 200 },
+        weights: { ticketsHandled: 28, activeDays: 20, inGameActivity: 18,  channelBreadth: 6,  modActions: 10, responseSpeed: 12, staffPresence: 4,   publicActivity: 2 },
+        expects: 'Handles tickets without being asked, and is reliably around.',
+      },
+      headstaff: {
+        targets: { ticketsHandled: 20, activeDays: 20, inGameActivity: 200, channelBreadth: 10, modActions: 15, responseSpeed: 15, staffPresence: 90,  publicActivity: 200 },
+        weights: { ticketsHandled: 25, activeDays: 18, inGameActivity: 16,  channelBreadth: 6,  modActions: 13, responseSpeed: 12, staffPresence: 8,   publicActivity: 2 },
+        expects: 'Everything Staff does, plus being the one newer staff ask.',
+      },
+      mod: {
+        targets: { ticketsHandled: 15, activeDays: 20, inGameActivity: 150, channelBreadth: 10, modActions: 20, responseSpeed: 15, staffPresence: 120, publicActivity: 150 },
+        weights: { ticketsHandled: 18, activeDays: 16, inGameActivity: 14,  channelBreadth: 6,  modActions: 18, responseSpeed: 12, staffPresence: 14,  publicActivity: 2 },
+        expects: 'Makes the calls other staff escalate, and is present for them.',
+      },
+      headmod: {
+        targets: { ticketsHandled: 10, activeDays: 20, inGameActivity: 120, channelBreadth: 12, modActions: 20, responseSpeed: 15, staffPresence: 150, publicActivity: 120 },
+        weights: { ticketsHandled: 12, activeDays: 15, inGameActivity: 12,  channelBreadth: 6,  modActions: 16, responseSpeed: 10, staffPresence: 27,  publicActivity: 2 },
+        expects: 'Runs the team. Ticket volume is the least of it.',
+      },
+    },
+
+    // Surface promotion candidates and drift in the weekly digest?
+    // This is the part that makes the system work without anyone running a
+    // command — otherwise a good Staff member sits unnoticed for six months
+    // because nobody thought to check.
+    inDigest: true,
+  },
+
+  // ----------------------------------------------------------
   // 7. ANTI-FARMING (leave alone unless you have a reason)
   // ----------------------------------------------------------
   tracking: {

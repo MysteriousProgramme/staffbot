@@ -8,7 +8,7 @@ const { summariseVouches } = require('../scoring');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('vouch')
-    .setDescription('Cast your senior-staff vote on a trial member')
+    .setDescription('Cast your senior-staff vote — on a trial, or on someone ready for the next rank')
     .addUserOption((o) => o.setName('user').setDescription('Who you are vouching on').setRequired(true))
     .addStringOption((o) =>
       o
@@ -40,11 +40,38 @@ module.exports = {
     }
 
     const row = db.getStaff(interaction.guildId, user.id);
-    if (!row?.trial_started_at) {
-      return err(interaction, `**${user.username}** is not on a trial.`);
+    if (!row) {
+      return err(
+        interaction,
+        `**${user.username}** isn't tracked as staff — run \`/sync\` if they hold a rank role.`
+      );
     }
 
-    const cycle = row.trial_started_at;
+    // A vouch means different things at different points on the ladder, and
+    // the KEY it is stored under has to match, or votes bleed between them.
+    //
+    //   on trial   → keyed to the trial. "Do we keep them?"
+    //   ranked     → keyed to their current rank. "Ready for the next one?"
+    //
+    // Keying ranked vouches to rank_since is what makes them reset on every
+    // promotion. Carrying them forward would let one vote promote someone
+    // twice, which is exactly the failure this whole system exists to avoid.
+    const onTrial = ['active', 'midpoint_posted', 'awaiting_review'].includes(row.trial_state ?? '');
+    const rankIdx = R.indexOfKey(row.rank_key);
+    const next = R.ranks[rankIdx + 1] ?? null;
+
+    if (!onTrial && !next) {
+      return err(
+        interaction,
+        `**${user.username}** is at **${R.rankByKey(row.rank_key)?.name ?? row.rank_key}** — the top of the ladder. There is no rank to vouch them into.`
+      );
+    }
+
+    const cycle = onTrial ? row.trial_started_at : row.rank_since;
+    const question = onTrial
+      ? 'keeping them on at the end of their trial'
+      : `promoting them to **${next.name}**`;
+
     const existing = db.getVouches(interaction.guildId, user.id, cycle);
     const had = existing.find((v) => v.voucher_id === interaction.user.id);
 
@@ -58,7 +85,8 @@ module.exports = {
         new EmbedBuilder()
           .setColor(config.colors.neutral)
           .setDescription(
-            `${had ? 'Vouch updated' : 'Vouch recorded'} for <@${user.id}>: **${verdict}**\n\n` +
+            `${had ? 'Vouch updated' : 'Vouch recorded'} for <@${user.id}>: **${verdict}**\n` +
+              `_You are voting on ${question}._\n\n` +
               `Tally so far: **${after.yes} yes · ${after.no} no · ${after.abstain} abstain** ` +
               `(need ${config.scoring.vouches.minimum} minimum).\n` +
               `_Only you can see this — vouches are private until the review card is posted._`

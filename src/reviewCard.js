@@ -4,6 +4,7 @@ const db = require('./db');
 const { computeScore, summariseVouches, verdict } = require('./scoring');
 const { rankByKey, indexOfKey, ranks } = require('./ranks');
 const observe = require('./observe');
+const standing = require('./standing');
 
 const fmtDays = (ms) => Math.max(0, Math.round(ms / 86400000));
 
@@ -138,4 +139,125 @@ function buildReviewCard(guild, staffRow, user, { midpoint = false } = {}) {
   return { embed, score, vouches, v, metrics };
 }
 
-module.exports = { buildReviewCard };
+/**
+ * The scorecard for everyone ABOVE Trial Staff.
+ *
+ * Same evidence, different question. A trial card asks "should this end in a
+ * promotion or a goodbye?" and is read once. This one asks "are they holding
+ * their rank, and are they ready for the next?" and is read whenever someone
+ * wonders — so it leads with direction of travel rather than a pass mark.
+ */
+function buildStandingCard(guild, staffRow, user, { days = null } = {}) {
+  const a = standing.assess(guild.id, staffRow, { days });
+  const v = a.verdict;
+
+  const arrow = a.delta === null ? '' : a.delta > 0 ? `▲ +${a.delta}` : a.delta < 0 ? `▼ ${a.delta}` : '▬ 0';
+
+  const embed = new EmbedBuilder()
+    .setColor(v.color)
+    .setAuthor({
+      name: `${user.username} — standing, last ${a.windowDays} days`,
+      iconURL: user.displayAvatarURL?.() || undefined,
+    })
+    .setTitle(`${v.label} — ${a.score}/100${arrow ? `  ${arrow}` : ''}`)
+    .setDescription(v.reason);
+
+  // Where they are on the ladder, and whether the clock has run.
+  const tenureLine = a.atTop
+    ? `In rank **${a.tenureDays} days** · top of the ladder`
+    : a.tenureNeeded
+      ? `In rank **${a.tenureDays} days** of the **${a.tenureNeeded}** expected before ${a.next.name}${a.tenureMet ? ' ✅' : ''}`
+      : `In rank **${a.tenureDays} days**`;
+
+  embed.addFields({
+    name: 'Where they stand',
+    value: [
+      `Rank: **${a.rank?.name ?? a.rankKey}**${a.next ? ` → next is **${a.next.name}**` : ''}`,
+      tenureLine,
+      a.previous
+        ? `Previous ${a.windowDays} days: **${a.previous.score}/100** → now **${a.score}/100**`
+        : '_No comparable previous window — this is the first read on them._',
+    ].join('\n'),
+  });
+
+  // Expectations for this rank, in words, so the numbers have a sentence
+  // attached. A scorecard without one gets argued with.
+  const profile = standing.profileFor(a.rankKey);
+  if (profile?.expects) {
+    embed.addFields({ name: `What ${a.rank?.name ?? 'this rank'} is for`, value: `_${profile.expects}_` });
+  }
+
+  const lines = a.breakdown.map((b) => {
+    const pct = Math.round(b.pct * 100);
+    const cmp = b.direction === 'lower' ? 'target under' : 'of';
+    return `\`${b.bar}\` **${b.label}** — ${b.display} (${cmp} ${b.targetDisplay}, ${pct}%, worth ${b.weightPct}%)`;
+  });
+  embed.addFields({
+    name: `Scorecard — ${a.rank?.name ?? a.rankKey} targets`,
+    value: lines.join('\n').slice(0, 1020) || '_no metrics enabled_',
+  });
+
+  if (a.skipped?.length) {
+    embed.addFields({
+      name: 'Not scored',
+      value: `${a.skipped.join(', ')} — no data in this window, so the rest were reweighted to fill 100%.`,
+    });
+  }
+
+  // Vouches mean something different up here: "ready for the next rank",
+  // not "keep them". Say so, or people vote on the wrong question.
+  if (!a.atTop) {
+    let vouchText;
+    if (a.vouches.total === 0) {
+      vouchText = `_None cast since they became ${a.rank?.name ?? 'this rank'}._ Senior staff: \`/vouch user:@${user.username}\` means **ready for ${a.next.name}** — not "keep them".`;
+    } else {
+      const detail = a.vouches.rows
+        .slice(0, 8)
+        .map((r) => {
+          const icon = r.verdict === 'yes' ? '✅' : r.verdict === 'no' ? '❌' : '➖';
+          return `${icon} <@${r.voucher_id}>${r.reason ? ` — ${r.reason.slice(0, 120)}` : ''}`;
+        })
+        .join('\n');
+      vouchText =
+        `**${a.vouches.yes} yes · ${a.vouches.no} no · ${a.vouches.abstain} abstain** ` +
+        `(need ${config.scoring.vouches.minimum})\n${detail}`;
+    }
+    embed.addFields({ name: `Vouches for ${a.next.name}`, value: vouchText.slice(0, 1020) });
+  }
+
+  if (a.loaDays) {
+    embed.addFields({
+      name: a.loaHeavy ? '🌙 Mostly on leave this window' : '🌙 Some leave this window',
+      value: `**${a.loaDays}** of these ${a.windowDays} days were approved leave.${
+        a.loaHeavy ? ' Nothing above is being held against them.' : ''
+      }`,
+    });
+  }
+
+  const bar = observe.coverageBar(guild.id, staffRow.user_id, a.from, a.to);
+  if (bar) {
+    embed.addFields({
+      name: 'When they are around (UTC)',
+      value: `\`${bar}\`\n\`0     6     12    18  23\``,
+    });
+  }
+
+  const notes = db.getNotes(guild.id, staffRow.user_id, 5);
+  if (notes.length) {
+    embed.addFields({
+      name: 'Notes from the team',
+      value: notes
+        .map((n) => `${n.kind === 'praise' ? '🟢' : '🟠'} <@${n.author_id}>: ${n.body.slice(0, 140)}`)
+        .join('\n')
+        .slice(0, 1020),
+    });
+  }
+
+  embed.setFooter({
+    text: 'Rolling window · nobody is promoted or demoted by the bot · /staffstats for the raw numbers',
+  });
+
+  return { embed, assessment: a, score: a.score, v };
+}
+
+module.exports = { buildReviewCard, buildStandingCard };

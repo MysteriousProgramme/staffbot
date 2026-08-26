@@ -222,6 +222,36 @@ if (tk.enabled) {
   }
 }
 
+// ---- standing (everyone above Trial Staff) ----
+{
+  const R = require('./ranks');
+  const st = config.standing ?? {};
+  console.log(`\n${B}Standing — ranks above Trial Staff${X}`);
+  if (st.enabled === false) {
+    console.log(`   ${Y}–${X} switched off; /review falls back to trial scoring for everyone`);
+  } else {
+    console.log(
+      `   ${D}${'rolling window'.padEnd(32)}${X}${st.windowDays ?? 30} days · ` +
+        `hold bar ${st.holdBar ?? 45} · promote bar ${st.promoteBar ?? 80}`
+    );
+    for (const rank of R.ranks.slice(1)) {
+      const p = st.profiles?.[rank.key];
+      const tenure = st.minTenureDays?.[rank.key];
+      const isTop = R.indexOfKey(rank.key) === R.ranks.length - 1;
+      if (!p) {
+        problemsExtra.push(
+          `standing.profiles.${rank.key} is missing — ${rank.name} would be judged against the 14-day trial targets, which they will clear without trying`
+        );
+        continue;
+      }
+      console.log(
+        `   ${D}${rank.name.padEnd(32)}${X}${p.targets?.ticketsHandled ?? '?'} tickets · ` +
+          (isTop ? 'top of the ladder' : tenure ? `${tenure}d before promotion` : 'no tenure gate')
+      );
+    }
+  }
+}
+
 // ---- sanity ----
 console.log(`\n${B}Sanity checks${X}`);
 const problems = [...problemsExtra];
@@ -237,6 +267,22 @@ if (config.scoring.autoFlag.belowBar >= config.scoring.autoFlag.promote) {
 }
 if (config.scoring.vouches.passRatio <= 0.5) {
   problems.push('scoring.vouches.passRatio at or below 0.5 means a tied vote passes');
+}
+if (config.standing?.enabled !== false) {
+  const st = config.standing ?? {};
+  if ((st.holdBar ?? 45) >= (st.promoteBar ?? 80)) {
+    problems.push('standing.holdBar must be lower than standing.promoteBar');
+  }
+  const trialTickets = config.scoring.metrics.ticketsHandled.target;
+  for (const [key, p] of Object.entries(st.profiles ?? {})) {
+    const t = p.targets?.ticketsHandled;
+    if (typeof t === 'number' && t <= trialTickets && key !== config.ranks[config.ranks.length - 1].key) {
+      problems.push(
+        `standing.profiles.${key}.targets.ticketsHandled (${t}) is not above the trial target (${trialTickets}) — ` +
+          `the standing window is ${st.windowDays ?? 30} days and the trial is ${config.trial.defaultDays}, so this rank would score ~100 for doing trial-level work`
+      );
+    }
+  }
 }
 for (const cat of tk.categoryIds ?? []) {
   if (!isId(cat) || placeholder(cat)) continue;

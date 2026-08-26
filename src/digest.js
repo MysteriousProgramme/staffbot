@@ -3,6 +3,7 @@ const config = require('../config');
 const db = require('./db');
 const R = require('./ranks');
 const team = require('./team');
+const standing = require('./standing');
 const { postToReviews } = require('./util');
 
 /**
@@ -44,6 +45,68 @@ function build(guild) {
       return `• <@${t.user_id}> — ends ${due}`;
     });
     embed.addFields({ name: `Trials (${trials.length})`, value: lines.join('\n').slice(0, 1020) });
+  }
+
+  // ---- the ranked staff: who is ready, who is slipping ----
+  //
+  // This is the half of the team the trial system never had an opinion about.
+  // Without it, a good Staff member sits unnoticed for six months because
+  // nobody thought to run a command on someone who wasn't a problem.
+  if (config.standing?.enabled !== false && config.standing?.inDigest !== false) {
+    const w = standing.watch(guild.id);
+
+    if (w.ready.length) {
+      anythingUrgent = true;
+      embed.addFields({
+        name: `⬆️ Ready for the next rank (${w.ready.length})`,
+        value: w.ready
+          .slice(0, 6)
+          .map(
+            (a) =>
+              `<@${a.userId}> · ${a.rank?.name} → **${a.next.name}** — ${a.score}/100, ` +
+              `${a.tenureDays}d in rank, vouched ${a.vouches.yes}–${a.vouches.no}`
+          )
+          .join('\n')
+          .slice(0, 1020),
+      });
+    }
+
+    if (w.candidates.length) {
+      embed.addFields({
+        name: `Worth a look (${w.candidates.length})`,
+        value:
+          w.candidates
+            .slice(0, 6)
+            .map((a) => {
+              const why =
+                a.verdict.code === 'too_soon'
+                  ? `${a.tenureDays}/${a.tenureNeeded}d in rank`
+                  : `${a.vouches.total}/${config.scoring.vouches.minimum} vouches in`;
+              return `<@${a.userId}> · ${a.rank?.name} — ${a.score}/100, ${why}`;
+            })
+            .join('\n')
+            .slice(0, 900) + '\n_Clearing the bar. `/vouch` decides it._',
+      });
+    }
+
+    if (w.drifting.length) {
+      anythingUrgent = true;
+      embed.addFields({
+        name: `📉 Slipping (${w.drifting.length})`,
+        value:
+          w.drifting
+            .slice(0, 6)
+            .map(
+              (a) =>
+                `<@${a.userId}> · ${a.rank?.name} — ${a.score}/100` +
+                (a.previous ? ` (was ${a.previous.score})` : '') +
+                (a.breakdown[0] ? ` · weakest: ${a.breakdown[0].label}` : '')
+            )
+            .join('\n')
+            .slice(0, 900) +
+          '\n_Two windows under the bar, not one. This is a conversation, not a demotion._',
+      });
+    }
   }
 
   // ---- people who have gone quiet ----

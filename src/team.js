@@ -2,18 +2,30 @@ const config = require('../config');
 const db = require('./db');
 const R = require('./ranks');
 const { computeScore } = require('./scoring');
+const standing = require('./standing');
 
 /**
  * Whole-team views. Everything here reads data already being collected —
  * no new tracking, just questions nobody was asking of it.
  */
 
-/** Score every tracked staff member over a window, best first. */
+/**
+ * Score every tracked staff member over a window, best first.
+ *
+ * Each person is scored against THEIR OWN rank's targets, not one shared set.
+ * That sounds like it would make the column meaningless across ranks; it does
+ * the opposite. 80 now means "80% of what this rank is for" for everyone on
+ * the board, so a Head Mod is not flattered by a ticket target meant for a
+ * trial, and a Staff member is not punished for not running the team.
+ */
 function leaderboard(guildId, from, to) {
   const rows = [];
   for (const staff of db.listStaff(guildId)) {
     const metrics = db.getMetrics(guildId, staff.user_id, from, to);
-    const { score, breakdown } = computeScore(metrics);
+    const onTrial = ['active', 'midpoint_posted', 'awaiting_review'].includes(staff.trial_state ?? '');
+    const windowDays = Math.max(1, Math.round((to - from) / 86400000));
+    const profile = onTrial ? null : standing.scaledProfile(staff.rank_key, windowDays);
+    const { score, breakdown } = computeScore(metrics, profile);
     const weakest = breakdown[0]; // computeScore sorts weakest first
     rows.push({
       userId: staff.user_id,
@@ -22,6 +34,7 @@ function leaderboard(guildId, from, to) {
       score,
       metrics,
       weakest,
+      scoredAgainst: profile ? 'rank' : 'trial',
       onLoa: Boolean(db.activeLoa(guildId, staff.user_id)),
       onTrial: ['active', 'midpoint_posted', 'awaiting_review'].includes(staff.trial_state ?? ''),
     });

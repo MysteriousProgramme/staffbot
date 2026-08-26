@@ -1,11 +1,12 @@
 # Staffbot
 
-Staff ranks, trial evaluation, and Ticket King integration for a Discord server.
+Staff ranks, trial evaluation, ongoing standing reviews, and Ticket King integration for a Discord server.
 
 - **`/promote` and `/demote`** move people along your ladder, with guardrails so nobody can touch someone at or above their own rank.
 - **Ticket King integration** — Staffbot watches your Ticket King category and works out who actually handled each ticket.
 - **`/trial start`** puts someone on the clock. The bot then measures what they actually do.
 - At the end it posts a **scorecard** — objective numbers plus senior-staff vouches — flagged **READY / BORDERLINE / BELOW BAR**.
+- **Above the trial**, every ranked staff member gets a rolling **standing** review against their own rank's targets, with a hold bar and a promote bar. See [the standing system](#above-the-trial--the-standing-system).
 
 The bot never promotes anyone by itself. It gives you the answer and the reasoning; a human clicks the button. See [Why it doesn't auto-promote](#why-it-doesnt-auto-promote).
 
@@ -107,8 +108,9 @@ To run it 24/7:
 | `/trial list` | Head Mod+ | Every trial running, and who's waiting on a decision |
 | `/promote user: reason: [rank:]` | Head Mod+ | Up one rank, or jump to a specific one |
 | `/demote user: reason: [rank:] [remove:]` | Head Mod+ | Down one rank, or off the team |
-| `/review user: [public:]` | Head Mod+ | Full scorecard, any time |
-| `/vouch user: verdict: [reason:]` | Head Mod+ | Your yes/no/abstain on a trial member |
+| `/review user: [window:] [public:]` | Head Mod+ | Full scorecard — trial card on a trial, standing card above it |
+| `/vouch user: verdict: [reason:]` | Head Mod+ | Your yes/no/abstain — on a trial, or on someone's next rank |
+| `/promotions` | Head Mod+ | Who's ready to move up, who's close, who's slipping |
 | `/note user: kind: note:` | Head Mod+ | Log something they did well or badly |
 | `/staffstats user: [days:]` | Head Mod+ | Raw numbers over any window |
 | `/conduct user: [lines:]` | Head Mod+ | Read a sample of what they've actually been saying |
@@ -321,11 +323,83 @@ Ephemeral by default and Head Mod+ only, so it isn't a public scoreboard. It als
 Posts to your reviews channel every Monday 09:00 UTC. Everything in it is something the bot already knew and nobody was asking:
 
 - Trials ending within 3 days, and any waiting on a decision
+- **Ranked staff ready for the next rank, and anyone slipping** (see below)
 - Staff unseen for 10+ days (people on leave excluded)
 - Tickets unclaimed, or open with no staff reply
 - Coverage gaps
 
 `/digest preview:true` shows it to you without posting. `digest.includeLeaderboard` adds the scores — **off by default**, since the digest lands in a channel your team may read.
+
+---
+
+## Above the trial — the standing system
+
+The trial system asks one question, once: *do we keep them?* It answers it and then goes quiet. That left four fifths of your ladder with raw numbers and no opinion about them — a Staff member could sit at the same rank for six months, doing well or doing nothing, and the bot would never mention it either way.
+
+Standing fixes that. Everyone above Trial Staff is scored on a **rolling window** instead of a trial window, against **their own rank's targets**, with **two bars instead of one**:
+
+| | |
+|---|---|
+| **Hold bar** (45) | Under it, they aren't currently holding up the rank |
+| **Promote bar** (80) | Over it, the next rank is worth discussing |
+
+`/review` picks the right card automatically — trial card if they're on a trial, standing card if they aren't. Nobody has to remember which.
+
+### Why per-rank targets
+
+A Head Mod judged on ticket volume is being rewarded for doing the job two rungs below them. So each rank gets its own targets *and* its own weights, in `standing.profiles`:
+
+| Rank | Weighted most on | Ticket target (30d) |
+|---|---|---|
+| Staff | Tickets (28%), turning up (20%) | 18 |
+| Head Staff | Tickets (25%), being the one people ask | 20 |
+| Mod | Mod actions (18%), tickets (18%), presence (14%) | 15 |
+| Head Mod | **Staff presence (27%)**, mod actions (16%) | 10 |
+
+Read the Head Mod row as the point of the whole thing: by that rank the job is running the team, and someone still grinding tickets instead is doing the rank below.
+
+> The standing targets are for **30 days**, not for a 14-day trial. Reusing the section 6 numbers here would make every ranked staff member look like a superstar. `check.bat` refuses a standing target that isn't above the trial one.
+
+### Three things a trial review never had to do
+
+**Trajectory.** The same window immediately before this one is scored too, so the card shows `▲ +12` or `▼ -9`. A 62 climbing and a 62 falling are entirely different conversations, and one number hides which one you're in.
+
+**Time in rank.** `standing.minTenureDays` — 30 days at Staff, 45 at Head Staff, 60 at Mod. Someone can clear the promote bar in their third week and the card will say **READY, TOO SOON**: *the number says yes, the calendar says wait*. Promotion three weeks into a rank teaches a team that the ladder is climbed by being noticed rather than by doing the work.
+
+**A drift signal, with a guard on it.** Under the hold bar for **two consecutive windows** — not one — before anything is flagged. One quiet month reads as **QUIET WINDOW** and the bot says so plainly: *worth noticing, not worth acting on.* Anyone on leave, including leave approved today, is excused entirely.
+
+### Vouches above the trial
+
+`/vouch` now works on ranked staff, and means something different: **ready for the next rank**, not *keep them*. The card and the command both say which question you're answering.
+
+Ranked vouches are keyed to `rank_since`, so **they reset on every promotion**. Carrying them forward would let one vote promote somebody twice, which is the exact failure this system exists to prevent.
+
+### `/promotions`
+
+The whole ranked team in one view, ephemeral, Head Mod+:
+
+```
+⬆️ Ready (1)
+@Jamie · Staff → Head Staff
+ 84/100 · 47d in rank · vouched 3–0
+
+Close (2)
+@Kai · Head Staff — 81/100, needs 12 more day(s) in rank
+@Rowan · Staff — 83/100, needs 1 more vouch(es)
+
+📉 Slipping (1)
+@Sam · Mod — 38/100 (was 41) · weakest: Tickets handled
+```
+
+The same three sections post in the weekly digest without anyone running anything. That's the half that actually changes behaviour — otherwise a good Staff member goes unnoticed for six months because nobody thought to check on someone who wasn't a problem.
+
+If it finds nothing, it says so, and says that a settled staff team looking settled is not the bot failing.
+
+### What is deliberately *not* here
+
+**Conduct sampling still stops at the trial.** `conduct.onlyDuringTrial` stays `true`. Extending message-content collection to your permanent staff, indefinitely, is a much bigger promise to make to your team than a 14-day trial sample — and it's a promise they'd be discovering rather than agreeing to.
+
+**Nothing auto-demotes.** Drift produces a flag and a sentence recommending a conversation. Every rank change is still a human running `/demote`.
 
 ---
 

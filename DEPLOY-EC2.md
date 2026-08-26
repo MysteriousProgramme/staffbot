@@ -68,7 +68,7 @@ Expect to end on something like:
 
 ```
 [db] using .../data
-[commands] loaded 10: conduct, demote, link, note, promote, review, staffstats, sync, trial, vouch
+[commands] loaded 15: conduct, coverage, demote, digest, leaderboard, link, loa, note, promote, promotions, review, staffstats, sync, trial, vouch
 [ready] logged in as Quartermaster#8865
 [perms] manage staff: Head Mod+ · vouch: Head Mod+ · review/link: Head Mod+ · 3 override role(s) bypass everything
 [startup] 4 people can cast a /vouch (Head Mod+ and override roles) · 2 needed
@@ -93,7 +93,17 @@ Expect to end on something like:
 | `sudo systemctl restart staffbot` | After editing `config.js` |
 | `sudo systemctl stop staffbot` | Take it offline |
 
-### Updating config
+### Updating to a new version
+
+Push the new code from your PC, then on the server:
+
+```bash
+cd ~/staffbot && bash deploy/update.sh
+```
+
+That pulls, reinstalls dependencies, checks the config, **re-registers the slash commands** and restarts. The command registration is the step people forget — new commands simply won't appear in Discord without it.
+
+### Just changing config
 
 ```bash
 cd ~/staffbot
@@ -101,7 +111,7 @@ nano config.js
 sudo systemctl restart staffbot
 ```
 
-Or if you're editing on GitHub in the browser:
+Or if you edited it on GitHub in the browser:
 
 ```bash
 cd ~/staffbot && git pull && sudo systemctl restart staffbot

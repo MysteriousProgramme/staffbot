@@ -25,9 +25,31 @@ function fmt(value, def) {
  *   response speed, they should be scored on the other metrics instead.
  *   Their zero tickets already cost them under ticketsHandled; charging
  *   them twice for the same absence would be double jeopardy.
+ *
+ * `overrides` lets a caller swap targets and weights per metric without
+ * touching the definitions — that is how ranked staff are judged against
+ * numbers appropriate to their rank (see config.standing.profiles) while
+ * still going through exactly one scoring engine. Two engines would drift
+ * apart within a month.
  */
-function computeScore(metrics) {
-  const defs = config.scoring.metrics;
+function computeScore(metrics, overrides = null) {
+  const base = config.scoring.metrics;
+  const tOver = overrides?.targets ?? {};
+  const wOver = overrides?.weights ?? {};
+
+  const defs = {};
+  for (const [key, def] of Object.entries(base)) {
+    const target = tOver[key];
+    const weight = wOver[key];
+    defs[key] =
+      target === undefined && weight === undefined
+        ? def
+        : {
+            ...def,
+            target: target === undefined ? def.target : target,
+            weight: weight === undefined ? def.weight : weight,
+          };
+  }
 
   // A metric can bow out two ways: `dataKey` (no data for this person yet) or
   // `requires` (the feature it depends on isn't configured at all).

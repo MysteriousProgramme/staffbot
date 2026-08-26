@@ -906,6 +906,275 @@ check('the digest leaves the leaderboard out unless asked', () => {
 });
 
 // ---------------------------------------------------------------
+console.log('\nStanding — the system above Trial Staff');
+const standing = require('../src/standing');
+const { buildStandingCard } = require('../src/reviewCard');
+
+const dayAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const putMetric = db.db.prepare(`
+  INSERT INTO metrics (guild_id, user_id, day, metric, value) VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT (guild_id, user_id, day, metric) DO UPDATE SET value = value + excluded.value
+`);
+const setSince = db.db.prepare('UPDATE staff SET rank_since = ? WHERE guild_id = ? AND user_id = ?');
+const backdate = (u, days) => {
+  setSince.run(Date.now() - days * 86400000, G, u);
+  return db.getStaff(G, u);
+};
+const bumpDay = (u, metric, value, daysAgo) => putMetric.run(G, u, dayAgo(daysAgo), metric, value);
+
+/** Fill every metric to roughly target across `days` recent days. */
+function makeExcellent(user, { offset = 0, days = 20 } = {}) {
+  for (let d = 0; d < days; d++) {
+    bumpDay(user, 'ticketsHandled', 1, d + offset);
+    bumpDay(user, 'inGameActivity', 10, d + offset);
+    bumpDay(user, 'modActions', 1, d + offset);
+    bumpDay(user, 'staffPresence', 4, d + offset);
+    bumpDay(user, 'publicActivity', 12, d + offset);
+  }
+  bumpDay(user, 'responseCount', 10, offset + 1);
+  bumpDay(user, 'responseTotalSec', 10 * 600, offset + 1); // 10 min average
+  for (let c = 0; c < 9; c++) {
+    db.bumpPresence(G, user, 'sc' + c, Date.now() - (offset * 86400000 + c * 3600000));
+  }
+}
+
+check('every rank above the trial has its own targets and weights', () => {
+  for (const rank of R.ranks.slice(1)) {
+    const p = standing.profileFor(rank.key);
+    assert.ok(p, `${rank.name} has no standing profile — it would be judged on trial targets`);
+    assert.ok(Object.keys(p.targets ?? {}).length, `${rank.name} has no targets`);
+    assert.ok(Object.keys(p.weights ?? {}).length, `${rank.name} has no weights`);
+  }
+});
+
+check('standing targets are harder than trial targets', () => {
+  // They cover 30 days rather than a 14-day trial. If they were not higher,
+  // every ranked staff member would score ~100 and the bar would mean nothing.
+  const trial = config.scoring.metrics.ticketsHandled.target;
+  for (const rank of R.ranks.slice(1, 3)) {
+    assert.ok(
+      standing.profileFor(rank.key).targets.ticketsHandled > trial,
+      `${rank.name} ticket target is not above the trial target`
+    );
+  }
+});
+
+check('the top of the ladder is not judged on ticket volume', () => {
+  const top = standing.profileFor(R.ranks[R.ranks.length - 1].key).weights;
+  const bottom = standing.profileFor(R.ranks[1].key).weights;
+  assert.ok(
+    top.ticketsHandled < bottom.ticketsHandled,
+    'a Head Mod is weighted on tickets as heavily as a Staff member'
+  );
+  assert.ok(
+    top.staffPresence > bottom.staffPresence,
+    'leading the team is not weighted above grinding tickets at the top rank'
+  );
+});
+
+check('targets scale to a shorter window', () => {
+  const full = standing.scaledProfile(R.ranks[1].key, 30);
+  const week = standing.scaledProfile(R.ranks[1].key, 7);
+  assert.ok(week.targets.ticketsHandled < full.targets.ticketsHandled, 'ticket target did not scale');
+  assert.ok(week.targets.inGameActivity < full.targets.inGameActivity);
+});
+
+check('averages and distinct counts are NOT scaled', () => {
+  const full = standing.scaledProfile(R.ranks[1].key, 30);
+  const week = standing.scaledProfile(R.ranks[1].key, 7);
+  assert.strictEqual(
+    week.targets.responseSpeed,
+    full.targets.responseSpeed,
+    'a shorter window must not change what counts as a fast reply'
+  );
+  assert.strictEqual(week.targets.channelBreadth, full.targets.channelBreadth);
+});
+
+check('you cannot be active on more days than the window has', () => {
+  const week = standing.scaledProfile(R.ranks[1].key, 7);
+  assert.ok(week.targets.activeDays <= 7, `activeDays target ${week.targets.activeDays} exceeds 7`);
+});
+
+check('a ranked staff member doing nothing reads under the hold bar', () => {
+  db.setRank(G, 's-ghost', R.ranks[1].key, 'a');
+  const a = standing.assess(G, backdate('s-ghost', 90));
+  assert.ok(a.score < config.standing.holdBar, `scored ${a.score}`);
+  assert.ok(['drifting', 'quiet_window'].includes(a.verdict.code), a.verdict.code);
+});
+
+check('one bad window is not called drifting', () => {
+  // No previous window at all means no streak, so nothing to flag yet.
+  const a = standing.assess(G, db.getStaff(G, 's-ghost'));
+  assert.strictEqual(a.drifting, false, 'flagged on a single window');
+  assert.strictEqual(a.verdict.code, 'quiet_window');
+});
+
+check('two windows under the bar IS drifting', () => {
+  db.setRank(G, 's-fade', R.ranks[2].key, 'a');
+  backdate('s-fade', 200);
+  // Barely present in both windows — enough data to compare, not enough to pass.
+  for (const d of [3, 9, 40, 50]) bumpDay('s-fade', 'publicActivity', 6, d);
+  const a = standing.assess(G, db.getStaff(G, 's-fade'));
+  assert.ok(a.previous, 'no previous window was scored');
+  assert.strictEqual(a.verdict.code, 'drifting', `got ${a.verdict.code} at ${a.score}`);
+});
+
+check('a strong month with no time in rank is held back by the calendar', () => {
+  db.setRank(G, 's-star', R.ranks[1].key, 'a'); // rank_since = now
+  makeExcellent('s-star');
+  const a = standing.assess(G, db.getStaff(G, 's-star'));
+  assert.ok(a.score >= config.standing.promoteBar, `only scored ${a.score}`);
+  assert.strictEqual(a.tenureMet, false);
+  assert.strictEqual(a.verdict.code, 'too_soon');
+});
+
+check('with the time served but no vouches, they are a candidate not a promotion', () => {
+  const a = standing.assess(G, backdate('s-star', 120));
+  assert.strictEqual(a.tenureMet, true);
+  assert.strictEqual(a.verdict.code, 'candidate');
+});
+
+check('score plus tenure plus vouches is what makes someone ready', () => {
+  const row = db.getStaff(G, 's-star');
+  db.putVouch(G, 's-star', 'v-1', row.rank_since, 'yes', 'carries the team');
+  db.putVouch(G, 's-star', 'v-2', row.rank_since, 'yes', null);
+  const a = standing.assess(G, db.getStaff(G, 's-star'));
+  assert.strictEqual(a.verdict.code, 'ready');
+  assert.ok(a.verdict.label.includes(a.next.name.toUpperCase()));
+});
+
+check('vouches are keyed to the rank, so a promotion resets them', () => {
+  const before = db.getStaff(G, 's-star');
+  const carried = db.getVouches(G, 's-star', before.rank_since).length;
+  assert.strictEqual(carried, 2);
+
+  db.setRank(G, 's-star', R.ranks[2].key, 'a'); // promote — rank_since moves
+  const after = db.getStaff(G, 's-star');
+  assert.notStrictEqual(after.rank_since, before.rank_since);
+  assert.strictEqual(
+    db.getVouches(G, 's-star', after.rank_since).length,
+    0,
+    'old vouches carried into the new rank — one vote would promote them twice'
+  );
+  db.setRank(G, 's-star', R.ranks[1].key, 'a');
+  setSince.run(before.rank_since, G, 's-star');
+});
+
+check('the top rank is never "ready" — there is nothing above it', () => {
+  const top = R.ranks[R.ranks.length - 1];
+  db.setRank(G, 's-top', top.key, 'a');
+  backdate('s-top', 300);
+  makeExcellent('s-top');
+  const a = standing.assess(G, db.getStaff(G, 's-top'));
+  assert.strictEqual(a.atTop, true);
+  assert.strictEqual(a.next, null);
+  assert.notStrictEqual(a.verdict.code, 'ready');
+  assert.strictEqual(a.verdict.code, 'steady');
+});
+
+check('no single metric can push a ranked staff member over the promote bar', () => {
+  // The same guarantee the trial scoring has. Someone who only ever grinds
+  // tickets must not be able to farm their way up the ladder.
+  db.setRank(G, 's-farm', R.ranks[1].key, 'a');
+  backdate('s-farm', 200);
+  bumpDay('s-farm', 'ticketsHandled', 500, 1);
+  const a = standing.assess(G, db.getStaff(G, 's-farm'));
+  assert.ok(
+    a.score < config.standing.promoteBar,
+    `one maxed metric reached ${a.score}, over the ${config.standing.promoteBar} bar`
+  );
+});
+
+check('leave approved today already excuses them', () => {
+  // A leave starting now contributes NOTHING to a backward-looking window, so
+  // the window overlap alone would report someone as slipping on the same day
+  // you signed off their time away.
+  db.setRank(G, 's-away', R.ranks[1].key, 'a');
+  backdate('s-away', 200);
+  const loa = db.startLoa(G, 's-away', 40, 'exams', 'a');
+  const a = standing.assess(G, db.getStaff(G, 's-away'));
+  assert.strictEqual(a.loaDays, 0, 'fixture no longer tests the case it was written for');
+  assert.strictEqual(a.onLeaveNow, true);
+  assert.strictEqual(a.verdict.code, 'on_leave');
+  assert.strictEqual(a.drifting, false, 'someone on approved leave was flagged as slipping');
+  db.endLoa(loa.id);
+});
+
+check('leave already served is counted against the window it covered', () => {
+  const started = Date.now() - 25 * 86400000;
+  db.db
+    .prepare(
+      `INSERT INTO loa (guild_id, user_id, start_at, end_at, reason, created_by, state)
+       VALUES (?, ?, ?, ?, 'past', 'a', 'ended')`
+    )
+    .run(G, 's-away', started, started + 20 * 86400000);
+  const a = standing.assess(G, db.getStaff(G, 's-away'));
+  assert.ok(a.loaDays >= 19, `only counted ${a.loaDays} days of leave`);
+  assert.strictEqual(a.loaHeavy, true);
+  assert.strictEqual(a.verdict.code, 'on_leave');
+  db.db.prepare(`DELETE FROM loa WHERE guild_id = ? AND user_id = ?`).run(G, 's-away');
+});
+
+check('the standing card renders with the rank they actually hold', () => {
+  const guild = { id: G, name: 'T' };
+  const user = { id: 's-star', username: 'Star', displayAvatarURL: () => null };
+  const { embed } = buildStandingCard(guild, db.getStaff(G, 's-star'), user);
+  const j = embed.toJSON();
+  assert.ok(j.title.includes('/100'), j.title);
+  const scorecard = j.fields.find((f) => f.name.startsWith('Scorecard'));
+  assert.ok(scorecard, 'no scorecard field');
+  assert.ok(scorecard.name.includes(R.ranks[1].name), scorecard.name);
+});
+
+check('the standing card asks for vouches on the NEXT rank, not on keeping them', () => {
+  const guild = { id: G, name: 'T' };
+  const user = { id: 's-farm', username: 'Farm', displayAvatarURL: () => null };
+  const { embed } = buildStandingCard(guild, db.getStaff(G, 's-farm'), user);
+  const f = embed.toJSON().fields.find((x) => x.name.startsWith('Vouches for'));
+  assert.ok(f, 'no vouch field on a ranked card');
+  assert.ok(f.name.includes(R.ranks[2].name), f.name);
+});
+
+check('the promotion watch separates ready, close and slipping', () => {
+  const w = standing.watch(G);
+  assert.ok(Array.isArray(w.ready) && Array.isArray(w.candidates) && Array.isArray(w.drifting));
+  assert.ok(w.drifting.some((a) => a.userId === 's-fade'), 'the fading Head Staff was not flagged');
+  const all = [...w.ready, ...w.candidates, ...w.drifting].map((a) => a.userId);
+  assert.ok(!all.includes('s-away'), 'someone on leave appeared in the watch');
+});
+
+check('trials are left to the trial system, not the promotion watch', () => {
+  db.setRank(G, 's-trial', R.ranks[0].key, 'a');
+  db.startTrial(G, 's-trial', Date.now() + 5 * 86400000);
+  makeExcellent('s-trial');
+  const all = Object.values(standing.watch(G)).flat().map((a) => a.userId);
+  assert.ok(!all.includes('s-trial'), 'a trial member appeared in the promotion watch');
+  db.clearTrial(G, 's-trial', 'passed');
+});
+
+check('the digest surfaces the ranked team without anyone asking', () => {
+  const j = digest.build({ id: G, name: 'T' }).embed.toJSON();
+  const names = (j.fields ?? []).map((f) => f.name).join(' | ');
+  assert.ok(/Slipping|Ready for the next rank|Worth a look/.test(names), names);
+});
+
+check('turning standing off leaves the digest alone', () => {
+  const saved = config.standing.enabled;
+  config.standing.enabled = false;
+  const j = digest.build({ id: G, name: 'T' }).embed.toJSON();
+  config.standing.enabled = saved;
+  const names = (j.fields ?? []).map((f) => f.name).join(' | ');
+  assert.ok(!/Slipping|Ready for the next rank/.test(names), names);
+});
+
+check('the hold bar sits below the promote bar', () => {
+  assert.ok(
+    config.standing.holdBar < config.standing.promoteBar,
+    'holdBar must be lower than promoteBar or every state collapses'
+  );
+});
+
+// ---------------------------------------------------------------
 // cleanup
 for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets']) {
   db.db.exec(`DELETE FROM ${t} WHERE guild_id='${G}'`);
