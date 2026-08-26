@@ -1216,6 +1216,80 @@ check('every ranked staff member has a profile, so nothing falls back silently',
   }
 });
 
+check('a thin month never escalates on its own', () => {
+  const a = standing.assess(G, db.getStaff(G, 's-ghost'));
+  assert.strictEqual(a.escalation.action, 'none');
+  assert.strictEqual(a.escalation.step, 0);
+});
+
+check('two windows under the bar says talk to them, not demote', () => {
+  const a = standing.assess(G, db.getStaff(G, 's-fade'));
+  assert.strictEqual(a.escalation.action, 'talk');
+  assert.ok(a.driftStreak >= 2, `streak was ${a.driftStreak}`);
+  assert.ok(/what changed/i.test(a.escalation.text), a.escalation.text);
+  assert.ok(/loa/i.test(a.escalation.text), 'leave was not offered as the alternative');
+  assert.ok(!/defensible/.test(a.escalation.text), 'jumped straight to a rank change');
+});
+
+check('a long streak with nothing logged still refuses to escalate', () => {
+  // The guard that matters. Three bad windows and no conversation is a
+  // failure of management, not grounds for a demotion.
+  db.setRank(G, 's-long', R.ranks[2].key, 'a');
+  backdate('s-long', 300);
+  for (const d of [2, 8, 35, 48, 65, 80]) bumpDay('s-long', 'publicActivity', 6, d);
+  const a = standing.assess(G, db.getStaff(G, 's-long'));
+  assert.ok(a.driftStreak >= 3, `streak was ${a.driftStreak}`);
+  assert.strictEqual(a.escalation.spokenTo, false);
+  assert.strictEqual(a.escalation.action, 'talk', 'escalated without anyone having spoken to them');
+  assert.ok(/nobody has actually asked them/i.test(a.escalation.text), a.escalation.text);
+});
+
+check('a logged concern is what unlocks the rank-review step', () => {
+  db.addNote(G, 's-long', 'boss', 'concern', 'Asked about the drop-off, no reply.');
+  const a = standing.assess(G, db.getStaff(G, 's-long'));
+  assert.strictEqual(a.escalation.spokenTo, true);
+  assert.strictEqual(a.escalation.action, 'review');
+  assert.ok(/defensible|still want the rank/i.test(a.escalation.text), a.escalation.text);
+  assert.ok(a.verdict.label.includes('REVIEW'), a.verdict.label);
+});
+
+check('praise is not mistaken for a concern', () => {
+  db.setRank(G, 's-praised', R.ranks[2].key, 'a');
+  backdate('s-praised', 300);
+  for (const d of [2, 8, 35, 48, 65, 80]) bumpDay('s-praised', 'publicActivity', 6, d);
+  db.addNote(G, 's-praised', 'boss', 'praise', 'Lovely with the new players.');
+  const a = standing.assess(G, db.getStaff(G, 's-praised'));
+  assert.strictEqual(a.escalation.spokenTo, false, 'a praise note unlocked a demotion review');
+  assert.strictEqual(a.escalation.action, 'talk');
+});
+
+check('nothing in the system ever demotes anybody', () => {
+  // The escalation only ever recommends. If this assertion needs relaxing,
+  // something has gone badly wrong with the design.
+  const a = standing.assess(G, db.getStaff(G, 's-long'));
+  assert.ok(!/^demot/i.test(a.escalation.action), a.escalation.action);
+  assert.ok(
+    /run `\/demote`|still a call|question to put to them/i.test(a.escalation.text),
+    'the strongest wording must still hand the decision to a person'
+  );
+});
+
+check('approved leave stops the escalation clock', () => {
+  const loa = db.startLoa(G, 's-long', 30, 'burnout', 'boss');
+  const a = standing.assess(G, db.getStaff(G, 's-long'));
+  assert.strictEqual(a.escalation.action, 'none');
+  assert.strictEqual(a.driftStreak, 0, 'leave did not reset the streak');
+  db.endLoa(loa.id);
+});
+
+check('the streak does not count windows from before they existed', () => {
+  db.setRank(G, 's-new', R.ranks[1].key, 'a');
+  backdate('s-new', 40);
+  bumpDay('s-new', 'publicActivity', 4, 3);
+  const a = standing.assess(G, db.getStaff(G, 's-new'));
+  assert.ok(a.driftStreak <= 1, `counted ${a.driftStreak} windows of a 40-day-old account`);
+});
+
 check('the hold bar sits below the promote bar', () => {
   assert.ok(
     config.standing.holdBar < config.standing.promoteBar,

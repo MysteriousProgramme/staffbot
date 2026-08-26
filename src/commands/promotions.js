@@ -73,12 +73,20 @@ module.exports = {
         name: `📉 Slipping (${w.drifting.length})`,
         value: w.drifting
           .slice(0, 10)
-          .map(
-            (a) =>
+          .map((a) => {
+            const e = a.escalation ?? {};
+            return (
               `<@${a.userId}> · ${a.rank?.name} — ${a.score}/100` +
               (a.previous ? ` (was ${a.previous.score})` : '') +
+              `\n ${e.streak ?? 1} window(s) under the bar · ` +
+              (e.action === 'review'
+                ? `**step ${e.step + 1}/${e.of}: a rank change is defensible**`
+                : e.spokenTo
+                  ? 'concern already logged'
+                  : 'nobody has logged a concern yet') +
               (a.breakdown[0] ? ` · weakest: ${a.breakdown[0].label}` : '')
-          )
+            );
+          })
           .join('\n')
           .slice(0, 1020),
       });

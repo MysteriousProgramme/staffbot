@@ -473,6 +473,37 @@ module.exports = {
       },
     },
 
+    // ---- WHEN TO DEMOTE ----
+    //
+    // There is deliberately no score that triggers a demotion, and there never
+    // will be. The score measures ACTIVITY. Almost every real demotion is
+    // about CONDUCT — abusing perms, being sharp with members, leaking staff
+    // chat, playing favourites — and the score is completely blind to all of
+    // it. Someone can sit at 90 and still need removing today.
+    //
+    // What a low score genuinely tells you is WHEN TO ASK, and it gives you a
+    // dated record if asking doesn't work. So the escalation is counted in
+    // windows, not points:
+    //
+    //   1 window under the hold bar   → nothing. Say nothing.
+    //   2 windows                     → have the conversation. Offer /loa.
+    //   3 windows, after that talk    → demotion is a reasonable option.
+    //
+    // The bot tracks which step you are on and whether anyone actually had
+    // the conversation (a `/note kind:concern` counts as evidence it happened).
+    // It still never demotes anybody.
+    demotion: {
+      conversationAfter: 2,  // consecutive sub-hold-bar windows before it says "ask them"
+      reviewAfter: 3,        // ...before it says a rank change is defensible
+      // Under this AND drifting, they have effectively stopped being staff.
+      // Still not automatic — it just changes the wording from "ask what's
+      // changed" to "ask whether they still want the rank".
+      collapseScore: 20,
+      // How far back to look when counting the streak. Six 30-day windows is
+      // half a year; nothing useful lives past that.
+      maxWindowsBack: 6,
+    },
+
     // Surface promotion candidates and drift in the weekly digest?
     // This is the part that makes the system work without anyone running a
     // command — otherwise a good Staff member sits unnoticed for six months

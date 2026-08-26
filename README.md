@@ -403,11 +403,34 @@ This matters more than it sounds. Trial-level work scores **100** against the tr
 
 The footer now points at the block that produced the numbers: `standing.profiles.<rank>` for ranked staff, `scoring.metrics` for trials. The default window follows suit — a trial defaults to the trial length, ranked staff to their standing window.
 
+### When to demote — and why it isn't a score
+
+**No score demotes anyone, at any rank.** That's a design decision, not an omission:
+
+- The score measures **activity**. Almost every real demotion is about **conduct** — abusing perms, being sharp with members, leaking staff chat, playing favourites — and the score is blind to all of it. Someone can sit at 90 and need removing today.
+- A quiet month has a dozen innocent causes. Exams, a new job, illness, a dead PC, a changed timezone, burnout. The bot cannot tell any of those apart from "stopped caring".
+- If a number demotes people, the number becomes the job. That's the farming problem wearing a different hat.
+
+So the escalation is counted in **windows, not points**:
+
+| Windows under the hold bar | What the bot says | What you do |
+|---|---|---|
+| 1 | **QUIET WINDOW** | Nothing. Say nothing. |
+| 2 | **DRIFTING** — step 1 of 3 | Ask what changed. If the answer is life, `/loa` is the tool — not `/demote`. |
+| 3+, nothing logged | still step 1 | *"Nobody has actually asked them yet."* Management hasn't happened; that isn't their fault. |
+| 3+, concern logged | **DRIFTING — REVIEW THE RANK**, step 3 of 3 | A rank change is now defensible. You still run `/demote` yourself, with a reason. |
+
+The third row is the guard that matters. Three bad months and no conversation is a failure of management, not grounds for a demotion — so the bot refuses to escalate until a `/note kind:concern` exists. That note is also what stops a demotion being a surprise: there's a dated record that somebody raised it.
+
+Under `standing.demotion.collapseScore` (20) the wording changes rather than the rule: at that level the question to put to them is whether they still *want* the rank, not whether they can improve it.
+
+**Approved leave stops the clock entirely** — `/loa` resets the streak, so nobody accrues drift while they're away with your blessing.
+
 ### What is deliberately *not* here
 
 **Conduct sampling still stops at the trial.** `conduct.onlyDuringTrial` stays `true`. Extending message-content collection to your permanent staff, indefinitely, is a much bigger promise to make to your team than a 14-day trial sample — and it's a promise they'd be discovering rather than agreeing to.
 
-**Nothing auto-demotes.** Drift produces a flag and a sentence recommending a conversation. Every rank change is still a human running `/demote`.
+**Nothing auto-demotes.** Drift produces a flag, an escalation step and a sentence recommending a conversation. Every rank change is still a human running `/demote`. There is a test asserting the strongest wording the bot can produce still hands the decision to a person.
 
 ---
 

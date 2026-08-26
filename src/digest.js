@@ -96,15 +96,23 @@ function build(guild) {
         value:
           w.drifting
             .slice(0, 6)
-            .map(
-              (a) =>
+            .map((a) => {
+              const e = a.escalation ?? {};
+              const flag =
+                e.action === 'review'
+                  ? ` · **step ${e.step + 1}/${e.of}** — rank review`
+                  : e.streak > 1
+                    ? ` · ${e.streak} windows${e.spokenTo ? ', concern logged' : ', nobody has spoken to them'}`
+                    : '';
+              return (
                 `<@${a.userId}> · ${a.rank?.name} — ${a.score}/100` +
                 (a.previous ? ` (was ${a.previous.score})` : '') +
-                (a.breakdown[0] ? ` · weakest: ${a.breakdown[0].label}` : '')
-            )
+                flag
+              );
+            })
             .join('\n')
             .slice(0, 900) +
-          '\n_Two windows under the bar, not one. This is a conversation, not a demotion._',
+          '\n_The bot never demotes. Two windows means ask what changed; three plus a logged concern means a rank change is defensible._',
       });
     }
   }

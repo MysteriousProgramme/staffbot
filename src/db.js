@@ -225,6 +225,10 @@ const stmts = {
   getNotes: db.prepare(
     'SELECT * FROM notes WHERE guild_id = ? AND subject_id = ? ORDER BY created_at DESC LIMIT ?'
   ),
+  notesSince: db.prepare(
+    `SELECT * FROM notes WHERE guild_id = ? AND subject_id = ? AND kind = ? AND created_at >= ?
+     ORDER BY created_at DESC`
+  ),
 
   addAudit: db.prepare(
     'INSERT INTO audit (guild_id, actor_id, subject_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)'
@@ -447,6 +451,8 @@ module.exports = {
 
   addNote: (g, s, a, kind, body) => stmts.addNote.run(g, s, a, kind, body, now()),
   getNotes: (g, s, limit = 10) => stmts.getNotes.all(g, s, limit),
+  /** Notes of one kind since a timestamp — used to tell whether anyone acted. */
+  notesSince: (g, s, kind, since) => stmts.notesSince.all(g, s, kind, since),
 
   addAudit: (g, actor, subject, action, detail) =>
     stmts.addAudit.run(g, actor, subject, action, detail || null, now()),

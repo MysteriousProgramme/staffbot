@@ -97,6 +97,80 @@ function scoreWindow(guildId, userId, rankKey, from, to, windowDays) {
 }
 
 /**
+ * How many consecutive windows, counting back from now, they have been under
+ * the hold bar. Stops at the first window they cleared it in, and at the first
+ * window with no data at all — that one means they weren't here yet, not that
+ * they were failing.
+ */
+function driftStreak(guildId, userId, rankKey, windowDays) {
+  const holdBar = S().holdBar ?? 45;
+  const max = Math.max(1, S().demotion?.maxWindowsBack ?? 6);
+  const now = Date.now();
+  let streak = 0;
+
+  for (let k = 0; k < max; k++) {
+    const to = now - k * windowDays * DAY;
+    const from = to - windowDays * DAY;
+    const w = scoreWindow(guildId, userId, rankKey, from, to, windowDays);
+    const hadData = Object.values(w.metrics).some((v) => typeof v === 'number' && v > 0);
+    if (!hadData && k > 0) break;         // before their time — not a failed window
+    if (w.score >= holdBar) break;
+    streak++;
+  }
+  return streak;
+}
+
+/**
+ * Which step of the demotion conversation you are on.
+ *
+ * Deliberately counted in WINDOWS, not points. There is no score at which the
+ * right answer is "demote them" — a quiet month has a dozen innocent causes
+ * and the bot cannot tell burnout from exams from a broken PC. What it can
+ * tell you is that this has now been true for three months running and that
+ * nobody has said anything to them yet, which is a fact worth having.
+ */
+function escalation(guildId, userId, streak, score, from) {
+  const d = S().demotion ?? {};
+  const talkAt = d.conversationAfter ?? 2;
+  const reviewAt = d.reviewAfter ?? 3;
+
+  // Did anyone actually act? A logged concern, or a demotion already applied,
+  // is the evidence that the conversation happened.
+  const lookback = Date.now() - (streak + 1) * (S().windowDays ?? 30) * DAY;
+  const concerns = db.notesSince(guildId, userId, 'concern', lookback);
+  const spokenTo = concerns.length > 0;
+
+  if (streak < talkAt) {
+    return { step: 0, of: reviewAt, streak, spokenTo, concerns, action: 'none',
+      text: 'Nothing to do. One window under the bar is a quiet month.' };
+  }
+
+  if (streak < reviewAt || !spokenTo) {
+    const why = streak >= reviewAt && !spokenTo
+      ? `${streak} windows under the bar, but nothing has been logged — as far as the record shows, nobody has actually asked them yet.`
+      : `${streak} consecutive windows under the bar.`;
+    return {
+      step: 1, of: reviewAt, streak, spokenTo, concerns, action: 'talk',
+      text:
+        `${why} Ask what changed before anything else — and if the answer is life, ` +
+        `\`/loa\` is the tool, not \`/demote\`. Log it with \`/note kind:concern\` so the next ` +
+        `person to look at this can see it happened.`,
+    };
+  }
+
+  const collapsed = score < (d.collapseScore ?? 20);
+  return {
+    step: 2, of: reviewAt, streak, spokenTo, concerns, action: 'review',
+    text:
+      `${streak} windows under the bar, and a concern was logged ` +
+      `<t:${Math.floor(concerns[0].created_at / 1000)}:R>. ` +
+      (collapsed
+        ? 'At this score they have effectively stopped doing the role — the question to put to them is whether they still want the rank, not whether they can improve it.'
+        : 'A rank change is now a defensible call. It is still a call: run `/demote` yourself, with a reason.'),
+  };
+}
+
+/**
  * Everything known about where a ranked staff member currently stands.
  * Pure data — no embeds, so the digest and /review can both use it.
  */
@@ -158,6 +232,13 @@ function assess(guildId, staffRow, { days = null } = {}) {
   const drifting =
     !excused && underNow && (streakNeeded <= 1 || (previous !== null && underBefore));
 
+  // How long this has been true, and whether anyone has done anything about it.
+  const streak = underNow && !excused ? driftStreak(guildId, staffRow.user_id, rankKey, windowDays) : 0;
+  const step = excused
+    ? { step: 0, of: S().demotion?.reviewAfter ?? 3, streak: 0, spokenTo: false, concerns: [], action: 'none',
+        text: 'On approved leave — the clock is not running.' }
+    : escalation(guildId, staffRow.user_id, streak, current.score, from);
+
   return {
     userId: staffRow.user_id,
     rankKey,
@@ -183,6 +264,8 @@ function assess(guildId, staffRow, { days = null } = {}) {
     onLeaveNow,
     excused,
     drifting,
+    driftStreak: streak,
+    escalation: step,
     onlyOneBadWindow: !excused && underNow && !drifting,
     verdict: standingVerdict({
       score: current.score,
@@ -194,6 +277,8 @@ function assess(guildId, staffRow, { days = null } = {}) {
       tenureNeeded: needed,
       vouches,
       drifting,
+      driftStreak: streak,
+      escalation: step,
       loaHeavy,
       onLeaveNow,
       excused,
@@ -223,11 +308,14 @@ function standingVerdict(a) {
   }
 
   if (a.drifting) {
+    const atReview = a.escalation?.action === 'review';
     return {
       code: 'drifting',
-      label: 'DRIFTING',
+      label: atReview ? 'DRIFTING — REVIEW THE RANK' : 'DRIFTING',
       color: config.colors.belowBar,
-      reason: `Score ${a.score} is under the ${holdBar} hold bar, and so was the window before it. This is the point to have a conversation — not to demote. Ask what changed before deciding anything.`,
+      reason:
+        `Score ${a.score} is under the ${holdBar} hold bar, and so was the window before it. ` +
+        (a.escalation?.text ?? 'Ask what changed before deciding anything.'),
     };
   }
 
@@ -339,6 +427,8 @@ function watch(guildId) {
 module.exports = {
   assess,
   watch,
+  driftStreak,
+  escalation,
   profileFor,
   scaledProfile,
   scoreWindow,

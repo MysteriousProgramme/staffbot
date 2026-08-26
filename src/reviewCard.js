@@ -225,6 +225,20 @@ function buildStandingCard(guild, staffRow, user, { days = null } = {}) {
     embed.addFields({ name: `Vouches for ${a.next.name}`, value: vouchText.slice(0, 1020) });
   }
 
+  // When someone is slipping, the useful thing is not the number — it is how
+  // long this has been true and whether anybody has said anything to them.
+  if (a.escalation?.action && a.escalation.action !== 'none') {
+    const e = a.escalation;
+    embed.addFields({
+      name: e.action === 'review' ? `⚠️ Step ${e.step + 1} of ${e.of}` : `Step ${e.step + 1} of ${e.of} — have the conversation`,
+      value:
+        e.text +
+        (e.spokenTo
+          ? ''
+          : '\n\n_Nothing is logged against them. The bot will keep saying "talk to them" until a `/note kind:concern` exists — that is the record that stops this becoming a surprise demotion._'),
+    });
+  }
+
   if (a.loaDays) {
     embed.addFields({
       name: a.loaHeavy ? '🌙 Mostly on leave this window' : '🌙 Some leave this window',
