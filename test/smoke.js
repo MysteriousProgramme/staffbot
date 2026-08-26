@@ -1167,6 +1167,55 @@ check('turning standing off leaves the digest alone', () => {
   assert.ok(!/Slipping|Ready for the next rank/.test(names), names);
 });
 
+check('a perfect trial month is NOT a perfect month at a real rank', () => {
+  // This is why /staffstats had to be taught the difference. Someone doing
+  // exactly trial-level work maxes the trial targets — and /staffstats tells
+  // you to calibrate config.js from what it shows you.
+  const M = config.scoring.metrics;
+  const trialLevel = {
+    ticketsHandled: M.ticketsHandled.target,
+    activeDays: M.activeDays.target,
+    inGameActivity: M.inGameActivity.target,
+    channelBreadth: M.channelBreadth.target,
+    modActions: M.modActions.target,
+    staffPresence: M.staffPresence.target,
+    publicActivity: M.publicActivity.target,
+    responseCount: 5,
+    responseSpeed: M.responseSpeed.target,
+  };
+
+  const asTrial = computeScore(trialLevel).score;
+  assert.strictEqual(asTrial, 100, 'fixture no longer maxes the trial targets');
+
+  for (const rank of R.ranks.slice(1)) {
+    const asRank = computeScore(trialLevel, standing.scaledProfile(rank.key, 30)).score;
+    assert.ok(
+      asRank < config.standing.promoteBar,
+      `${rank.name} would be a promotion candidate for doing trial-level work (${asRank})`
+    );
+  }
+});
+
+check('staffstats defaults to the window the person is actually judged over', () => {
+  assert.strictEqual(standing.windowDaysFor(R.ranks[1].key), config.standing.windowDays);
+  assert.notStrictEqual(
+    config.standing.windowDays,
+    config.trial.defaultDays,
+    'trial and standing windows are identical — the distinction is untested'
+  );
+});
+
+check('every ranked staff member has a profile, so nothing falls back silently', () => {
+  // /staffstats warns when a rank has no profile, but the warning is a
+  // last resort — the config should never reach that state.
+  for (const rank of R.ranks.slice(1)) {
+    assert.ok(
+      standing.scaledProfile(rank.key, 30),
+      `${rank.name} would silently fall back to trial targets in /staffstats and /leaderboard`
+    );
+  }
+});
+
 check('the hold bar sits below the promote bar', () => {
   assert.ok(
     config.standing.holdBar < config.standing.promoteBar,

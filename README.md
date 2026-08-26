@@ -112,7 +112,7 @@ To run it 24/7:
 | `/vouch user: verdict: [reason:]` | Head Mod+ | Your yes/no/abstain — on a trial, or on someone's next rank |
 | `/promotions` | Head Mod+ | Who's ready to move up, who's close, who's slipping |
 | `/note user: kind: note:` | Head Mod+ | Log something they did well or badly |
-| `/staffstats user: [days:]` | Head Mod+ | Raw numbers over any window |
+| `/staffstats user: [days:]` | Head Mod+ | Raw numbers over any window, against their own rank's targets |
 | `/conduct user: [lines:]` | Head Mod+ | Read a sample of what they've actually been saying |
 | `/link set user: ign:` | Head Mod+ | Map a Minecraft username to a Discord account |
 | `/link list` | Head Mod+ | Every link, and which staff are missing one |
@@ -394,6 +394,14 @@ Close (2)
 The same three sections post in the weekly digest without anyone running anything. That's the half that actually changes behaviour — otherwise a good Staff member goes unnoticed for six months because nobody thought to check on someone who wasn't a problem.
 
 If it finds nothing, it says so, and says that a settled staff team looking settled is not the bot failing.
+
+### `/staffstats` uses the same yardstick
+
+`/staffstats` scores against **the targets for the rank the person actually holds**, scaled to whatever window you ask for, and says which yardstick it used in the description line.
+
+This matters more than it sounds. Trial-level work scores **100** against the trial targets and **54 / 45 / 46 / 46** against Staff / Head Staff / Mod / Head Mod. Before this, running `/staffstats` on a Head Mod showed a near-perfect card — and the footer told you to calibrate `config.js` from what you were looking at. You'd have raised your trial bar off a number that was never measuring a trial.
+
+The footer now points at the block that produced the numbers: `standing.profiles.<rank>` for ranked staff, `scoring.metrics` for trials. The default window follows suit — a trial defaults to the trial length, ranked staff to their standing window.
 
 ### What is deliberately *not* here
 
