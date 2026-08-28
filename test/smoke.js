@@ -908,7 +908,7 @@ check('the digest leaves the leaderboard out unless asked', () => {
 // ---------------------------------------------------------------
 console.log('\nStanding — the system above Trial Staff');
 const standing = require('../src/standing');
-const { buildStandingCard } = require('../src/reviewCard');
+const { buildStandingCard, buildReviewCard } = require('../src/reviewCard');
 
 const dayAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const putMetric = db.db.prepare(`
@@ -1290,6 +1290,161 @@ check('the streak does not count windows from before they existed', () => {
   assert.ok(a.driftStreak <= 1, `counted ${a.driftStreak} windows of a 40-day-old account`);
 });
 
+// ---------------------------------------------------------------
+console.log('\nManual adjustments');
+const ADJ = require('../src/adjustments');
+
+const mkAdj = (u, points, reason, days) =>
+  db.addAdjustment({
+    guildId: G, userId: u, points, reason,
+    authorId: 'boss', expiresAt: ADJ.expiryFor(days),
+  });
+
+check('an adjustment moves the score without touching the measurement', () => {
+  db.setRank(G, 'a-one', R.ranks[1].key, 'a');
+  backdate('a-one', 120);
+  makeExcellent('a-one');
+  const before = standing.assess(G, db.getStaff(G, 'a-one'));
+  mkAdj('a-one', -12, 'Sharp with a member in #general.');
+  const after = standing.assess(G, db.getStaff(G, 'a-one'));
+
+  assert.strictEqual(after.rawScore, before.score, 'the measured score was altered');
+  assert.strictEqual(after.score, before.score - 12);
+  assert.strictEqual(after.adjustment.delta, -12);
+});
+
+check('the raw score survives on the card, next to the adjusted one', () => {
+  const guild = { id: G, name: 'T' };
+  const user = { id: 'a-one', username: 'One', displayAvatarURL: () => null };
+  const { embed } = buildStandingCard(guild, db.getStaff(G, 'a-one'), user);
+  const j = embed.toJSON();
+  const f = j.fields.find((x) => x.name.startsWith('Manual adjustments'));
+  assert.ok(f, 'the ledger is not shown on the card');
+  assert.ok(/Measured \*\*\d+\/100\*\*/.test(f.value), f.value);
+  assert.ok(/<@boss>/.test(f.value), 'the issuer is not named');
+  assert.ok(/Sharp with a member/.test(f.value), 'the reason is not shown');
+  assert.ok(/measured \d+/.test(j.title), `raw score missing from the title: ${j.title}`);
+});
+
+check('a deduction blocks a promotion however high the score is', () => {
+  const a = standing.assess(G, db.getStaff(G, 'a-one'));
+  assert.ok(a.rawScore >= config.standing.promoteBar, `raw was only ${a.rawScore}`);
+  assert.strictEqual(a.verdict.code, 'conduct_hold');
+  assert.ok(/active deduction/i.test(a.verdict.reason), a.verdict.reason);
+});
+
+check('a blocked person is never listed as ready', () => {
+  const w = standing.watch(G);
+  assert.ok(!w.ready.some((x) => x.userId === 'a-one'), 'a conduct hold was reported as ready');
+  assert.ok(w.candidates.some((x) => x.userId === 'a-one'), 'they vanished from the watch entirely');
+});
+
+check('revoking restores them immediately', () => {
+  const rows = db.allAdjustments(G, 'a-one', 5);
+  db.revokeAdjustment(rows[0].id, G, 'boss2');
+  const a = standing.assess(G, db.getStaff(G, 'a-one'));
+  assert.strictEqual(a.adjustment.delta, 0);
+  assert.strictEqual(a.score, a.rawScore);
+  assert.notStrictEqual(a.verdict.code, 'conduct_hold');
+});
+
+check('a revoked entry stays in the record rather than disappearing', () => {
+  const rows = db.allAdjustments(G, 'a-one', 5);
+  assert.strictEqual(rows.length, 1);
+  assert.ok(rows[0].revoked_at, 'the entry was deleted instead of marked');
+  assert.strictEqual(rows[0].revoked_by, 'boss2');
+});
+
+check('adjustments expire on their own', () => {
+  db.setRank(G, 'a-old', R.ranks[1].key, 'a');
+  backdate('a-old', 120);
+  const row = mkAdj('a-old', -10, 'Something from a long time ago.', 90);
+  assert.strictEqual(ADJ.net(G, 'a-old').delta, -10);
+  // Wind its expiry back into the past.
+  db.db.prepare('UPDATE adjustments SET expires_at = ? WHERE id = ?')
+    .run(Date.now() - 1000, row.id);
+  assert.strictEqual(ADJ.net(G, 'a-old').delta, 0, 'a lapsed adjustment still applied');
+});
+
+check('the default expiry is finite', () => {
+  assert.ok(config.adjustments.expiryDays > 0, 'adjustments default to permanent');
+});
+
+check('a single adjustment is capped', () => {
+  const max = ADJ.maxSingle();
+  const reason = 'a perfectly good reason here';
+  const over = ADJ.validate(-(max + 1), reason);
+  assert.ok(over, 'an over-cap adjustment was accepted');
+  assert.ok(/demote/i.test(over), 'the cap does not point at the real tool instead');
+  assert.strictEqual(ADJ.validate(-max, reason), null, 'the cap itself was refused');
+});
+
+check('the running total is capped too', () => {
+  db.setRank(G, 'a-cap', R.ranks[1].key, 'a');
+  backdate('a-cap', 120);
+  for (let i = 0; i < 6; i++) mkAdj('a-cap', -15, `Stacked deduction number ${i}`);
+  const n = ADJ.net(G, 'a-cap');
+  assert.strictEqual(n.raw, -90);
+  assert.strictEqual(n.delta, -ADJ.maxTotal(), `capped to ${n.delta}`);
+  assert.strictEqual(n.wasCapped, true, 'the cap was applied silently');
+});
+
+check('a capped total is reported, not swallowed', () => {
+  const sum = ADJ.summarise(G, 'a-cap');
+  assert.ok(/before the/.test(sum.header), sum.header);
+});
+
+check('the score can never leave 0-100', () => {
+  const a = standing.assess(G, db.getStaff(G, 'a-cap'));
+  assert.ok(a.score >= 0 && a.score <= 100, `score was ${a.score}`);
+  db.setRank(G, 'a-hi', R.ranks[1].key, 'a');
+  backdate('a-hi', 120);
+  makeExcellent('a-hi');
+  mkAdj('a-hi', 15, 'Trained two new hires in voice this month.');
+  const b = standing.assess(G, db.getStaff(G, 'a-hi'));
+  assert.strictEqual(b.score, 100, `credit pushed a 100 to ${b.score}`);
+});
+
+check('an empty or throwaway reason is refused', () => {
+  assert.ok(ADJ.validate(-5, ''), 'a blank reason was accepted');
+  assert.ok(ADJ.validate(-5, 'bad'), 'a three-letter reason was accepted');
+  assert.strictEqual(ADJ.validate(-5, 'Left a ticket unanswered for two days.'), null);
+});
+
+check('zero and fractional points are refused', () => {
+  assert.ok(ADJ.validate(0, 'a perfectly good reason here'));
+  assert.ok(ADJ.validate(2.5, 'a perfectly good reason here'));
+});
+
+check('a credit does not block a promotion', () => {
+  const a = standing.assess(G, db.getStaff(G, 'a-hi'));
+  assert.strictEqual(ADJ.hasDeduction(G, 'a-hi'), false);
+  assert.notStrictEqual(a.verdict.code, 'conduct_hold');
+});
+
+check('trial cards carry the ledger too', () => {
+  db.setRank(G, 'a-trial', R.ranks[0].key, 'a');
+  db.startTrial(G, 'a-trial', Date.now() + 5 * 86400000);
+  makeExcellent('a-trial');
+  mkAdj('a-trial', -10, 'Argued with a member in front of everyone.');
+  const guild = { id: G, name: 'T' };
+  const user = { id: 'a-trial', username: 'Tri', displayAvatarURL: () => null };
+  const { embed, score } = buildReviewCard(guild, db.getStaff(G, 'a-trial'), user);
+  const f = embed.toJSON().fields.find((x) => x.name.startsWith('Manual adjustments'));
+  assert.ok(f, 'a trial card ignored the adjustment');
+  assert.ok(/Measured/.test(f.value), f.value);
+  db.clearTrial(G, 'a-trial', 'passed');
+});
+
+check('turning adjustments off makes them inert without deleting them', () => {
+  const saved = config.adjustments.enabled;
+  config.adjustments.enabled = false;
+  assert.strictEqual(ADJ.net(G, 'a-cap').delta, 0);
+  assert.strictEqual(ADJ.hasDeduction(G, 'a-cap'), false);
+  config.adjustments.enabled = saved;
+  assert.ok(db.allAdjustments(G, 'a-cap', 10).length > 0, 'the entries were destroyed');
+});
+
 check('the hold bar sits below the promote bar', () => {
   assert.ok(
     config.standing.holdBar < config.standing.promoteBar,
@@ -1299,7 +1454,7 @@ check('the hold bar sits below the promote bar', () => {
 
 // ---------------------------------------------------------------
 // cleanup
-for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets']) {
+for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets', 'adjustments']) {
   db.db.exec(`DELETE FROM ${t} WHERE guild_id='${G}'`);
 }
 db.db.exec("DELETE FROM ticket_participants WHERE channel_id LIKE 'chan-%'");

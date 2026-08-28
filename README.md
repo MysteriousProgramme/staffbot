@@ -112,6 +112,9 @@ To run it 24/7:
 | `/vouch user: verdict: [reason:]` | Head Mod+ | Your yes/no/abstain — on a trial, or on someone's next rank |
 | `/promotions` | Head Mod+ | Who's ready to move up, who's close, who's slipping |
 | `/note user: kind: note:` | Head Mod+ | Log something they did well or badly |
+| `/deduct user: points: reason: [days:]` | Head Mod+ | Take points off for something the numbers can't see |
+| `/increase user: points: reason: [days:]` | Head Mod+ | Add points for DMs, voice, builds, mentoring |
+| `/adjustments user: [revoke:]` | Head Mod+ | Read the ledger, or take an entry back off it |
 | `/staffstats user: [days:]` | Head Mod+ | Raw numbers over any window, against their own rank's targets |
 | `/conduct user: [lines:]` | Head Mod+ | Read a sample of what they've actually been saying |
 | `/link set user: ign:` | Head Mod+ | Map a Minecraft username to a Discord account |
@@ -425,6 +428,33 @@ The third row is the guard that matters. Three bad months and no conversation is
 Under `standing.demotion.collapseScore` (20) the wording changes rather than the rule: at that level the question to put to them is whether they still *want* the rank, not whether they can improve it.
 
 **Approved leave stops the clock entirely** — `/loa` resets the streak, so nobody accrues drift while they're away with your blessing.
+
+### `/deduct` and `/increase` — the gap the numbers can't cover
+
+The score measures **activity**. Someone can sit at 90 having done something that should stop a promotion dead, and nothing in the metrics knows. It cuts both ways: the bot can't see a dispute settled in DMs, an hour spent training a new hire in voice, or a build that took someone a weekend.
+
+So both directions exist. But an adjustment here is a **ledger entry, never an edit to the score** — because the number's entire value is that it isn't negotiable. The moment ±15 can be handed out silently, the score stops being a measurement and becomes an opinion wearing a measurement's clothes, and nobody reading it later can tell which parts are which.
+
+Four rules keep it evidence:
+
+| | |
+|---|---|
+| **Attributed** | Every entry names who issued it and why. A Head Mod who likes someone can still add points — everyone can *see* that they did, which is the part that matters. |
+| **Visible** | The card always shows both: `84/100 (measured 96)`, with the full ledger underneath. A score you can't take apart again isn't evidence. |
+| **Expiring** | 90 days by default. A deduction for a bad week in March shouldn't still be dragging someone down in September, and nobody ever remembers to remove it by hand. |
+| **Capped** | 15 per entry, 30 total. Past that the tool is `/demote`, and the cap says so in the error. |
+
+**The deduction is not the punishment.** An active deduction **blocks a promotion recommendation outright**, whatever the score says — the verdict becomes `ON HOLD — CONDUCT` and names the reason. That's the clean answer to "high points but they did something bad": the promotion stops, and the cause is stated rather than smuggled into the number as arithmetic nobody can read back.
+
+Other guards:
+
+- **They're told.** A DM goes out when an entry is issued, and again when a deduction is revoked. A deduction someone discovers months later from a number is the worst version of this feature.
+- **The rank rule applies.** You can't adjust yourself, or anyone at or above your own authority — otherwise `/deduct` would be a way to act on a peer that `/demote` explicitly forbids.
+- **Reasons are mandatory** and must be more than a few characters.
+- **Revoking is first-class.** `/adjustments user:@x revoke:12` lifts one, DMs them that it's lifted, and leaves the entry in the record marked revoked rather than deleting it.
+- **Switching the feature off makes entries inert, not deleted.**
+
+> If you find yourself reaching for `/deduct` repeatedly on the same person, that's the signal — you're using arithmetic to avoid a conversation. Two deductions and a drift flag is a `/note kind:concern` and a talk.
 
 ### What is deliberately *not* here
 

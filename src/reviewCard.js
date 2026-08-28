@@ -5,6 +5,7 @@ const { computeScore, summariseVouches, verdict } = require('./scoring');
 const { rankByKey, indexOfKey, ranks } = require('./ranks');
 const observe = require('./observe');
 const standing = require('./standing');
+const adjustments = require('./adjustments');
 
 const fmtDays = (ms) => Math.max(0, Math.round(ms / 86400000));
 
@@ -17,7 +18,11 @@ function buildReviewCard(guild, staffRow, user, { midpoint = false } = {}) {
   const to = Date.now();
 
   const metrics = db.getMetrics(guild.id, staffRow.user_id, from, to);
-  const { score, breakdown, skipped } = computeScore(metrics);
+  const raw = computeScore(metrics);
+  const { breakdown, skipped } = raw;
+  // A trial member can be adjusted too — the same gap exists there.
+  const adj = adjustments.apply(raw.score, guild.id, staffRow.user_id);
+  const score = adj.score;
   const vouchRows = db.getVouches(guild.id, staffRow.user_id, from);
   const vouches = summariseVouches(vouchRows);
   const v = verdict(score, vouches);
@@ -57,6 +62,14 @@ function buildReviewCard(guild, staffRow, user, { midpoint = false } = {}) {
     return `\`${b.bar}\` **${b.label}** — ${b.display} (${cmp} ${b.targetDisplay}, ${pct}%, worth ${b.weightPct}%)`;
   });
   embed.addFields({ name: 'Scorecard', value: lines.join('\n') || '_no metrics enabled_' });
+
+  const trialAdj = adjustments.summarise(guild.id, staffRow.user_id);
+  if (trialAdj) {
+    embed.addFields({
+      name: `Manual adjustments — ${trialAdj.header}`,
+      value: `Measured **${adj.raw}/100**, adjusted to **${adj.score}/100**.\n\n${trialAdj.body}`.slice(0, 1020),
+    });
+  }
 
   if (skipped?.length) {
     embed.addFields({
@@ -159,7 +172,10 @@ function buildStandingCard(guild, staffRow, user, { days = null } = {}) {
       name: `${user.username} — standing, last ${a.windowDays} days`,
       iconURL: user.displayAvatarURL?.() || undefined,
     })
-    .setTitle(`${v.label} — ${a.score}/100${arrow ? `  ${arrow}` : ''}`)
+    .setTitle(
+      `${v.label} — ${a.score}/100${a.adjustment?.effective ? ` (measured ${a.rawScore})` : ''}` +
+        `${arrow ? `  ${arrow}` : ''}`
+    )
     .setDescription(v.reason);
 
   // Where they are on the ladder, and whether the clock has run.
@@ -223,6 +239,18 @@ function buildStandingCard(guild, staffRow, user, { days = null } = {}) {
         `(need ${config.scoring.vouches.minimum})\n${detail}`;
     }
     embed.addFields({ name: `Vouches for ${a.next.name}`, value: vouchText.slice(0, 1020) });
+  }
+
+  // The ledger, always next to the untouched number it moved. A score you
+  // cannot take apart again is not evidence.
+  const ledger = adjustments.summarise(guild.id, staffRow.user_id);
+  if (ledger) {
+    embed.addFields({
+      name: `Manual adjustments — ${ledger.header}`,
+      value:
+        `Measured **${a.rawScore}/100**, adjusted to **${a.score}/100**.\n\n${ledger.body}` +
+        '\n\n_`/adjustments` to review or revoke these._',
+    });
   }
 
   // When someone is slipping, the useful thing is not the number — it is how

@@ -139,6 +139,38 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_game_links_user ON game_links (guild_id, user_id);
 
+  -- Manual score adjustments. Never deleted, only voided, so an undo still
+  -- leaves a record of what was done and by whom.
+  CREATE TABLE IF NOT EXISTS adjustments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    points     INTEGER NOT NULL,
+    reason     TEXT NOT NULL,
+    author_id  TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    voided_at  INTEGER,
+    voided_by  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_adjust_user ON adjustments (guild_id, user_id, created_at);
+
+  -- Manual score adjustments. Deliberately a LEDGER, not an edit to the score:
+  -- every entry keeps who issued it, why, when it expires and whether it was
+  -- revoked, so an adjusted score can always be taken apart again.
+  CREATE TABLE IF NOT EXISTS adjustments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    points     INTEGER NOT NULL,
+    reason     TEXT NOT NULL,
+    author_id  TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    revoked_at INTEGER,
+    revoked_by TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_adj_user ON adjustments (guild_id, user_id, created_at);
+
   -- who actually talked in each ticket, and how much
   CREATE TABLE IF NOT EXISTS ticket_participants (
     channel_id TEXT NOT NULL,
@@ -167,6 +199,27 @@ ensureColumns('tickets', {
   credited_to: 'TEXT',
   last_activity_at: 'INTEGER NOT NULL DEFAULT 0',
 });
+
+// Adjustments gained expiry and were renamed void -> revoke. CREATE TABLE IF
+// NOT EXISTS silently does nothing to an existing table, so without this the
+// bot would throw at require() time on any database that predates the change —
+// which takes the whole process down before it ever reaches an error handler.
+ensureColumns('adjustments', {
+  expires_at: 'INTEGER',
+  revoked_at: 'INTEGER',
+  revoked_by: 'TEXT',
+});
+{
+  const cols = new Set(db.prepare('PRAGMA table_info(adjustments)').all().map((c) => c.name));
+  if (cols.has('voided_at')) {
+    const moved = db
+      .prepare(
+        'UPDATE adjustments SET revoked_at = voided_at, revoked_by = voided_by WHERE voided_at IS NOT NULL AND revoked_at IS NULL'
+      )
+      .run().changes;
+    if (moved) console.log(`[db] migrated: carried ${moved} voided adjustment(s) over to revoked`);
+  }
+}
 
 const now = () => Date.now();
 const dayKey = (ts = Date.now()) => new Date(ts).toISOString().slice(0, 10);
@@ -355,6 +408,46 @@ const stmts = {
   `),
   purgeConduct: db.prepare('DELETE FROM conduct WHERE created_at < ?'),
   clearConduct: db.prepare('DELETE FROM conduct WHERE guild_id = ? AND user_id = ?'),
+
+  // ---- manual adjustments ----
+  addAdjustment: db.prepare(`
+    INSERT INTO adjustments (guild_id, user_id, points, reason, author_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  adjustmentsIn: db.prepare(`
+    SELECT * FROM adjustments
+    WHERE guild_id = ? AND user_id = ? AND voided_at IS NULL
+      AND created_at >= ? AND created_at <= ?
+    ORDER BY created_at DESC
+  `),
+  adjustmentsAll: db.prepare(`
+    SELECT * FROM adjustments WHERE guild_id = ? AND user_id = ?
+    ORDER BY created_at DESC LIMIT ?
+  `),
+  getAdjustment: db.prepare('SELECT * FROM adjustments WHERE id = ? AND guild_id = ?'),
+  voidAdjustment: db.prepare(
+    'UPDATE adjustments SET voided_at = ?, voided_by = ? WHERE id = ? AND voided_at IS NULL'
+  ),
+
+  // ---- manual adjustments ----
+  addAdjustment: db.prepare(`
+    INSERT INTO adjustments (guild_id, user_id, points, reason, author_id, created_at, expires_at)
+    VALUES (@guild_id, @user_id, @points, @reason, @author_id, @created_at, @expires_at)
+  `),
+  activeAdjustments: db.prepare(`
+    SELECT * FROM adjustments
+    WHERE guild_id = ? AND user_id = ? AND revoked_at IS NULL
+      AND (expires_at IS NULL OR expires_at > ?)
+    ORDER BY created_at DESC
+  `),
+  allAdjustments: db.prepare(`
+    SELECT * FROM adjustments WHERE guild_id = ? AND user_id = ?
+    ORDER BY created_at DESC LIMIT ?
+  `),
+  getAdjustment: db.prepare('SELECT * FROM adjustments WHERE id = ? AND guild_id = ?'),
+  revokeAdjustment: db.prepare(
+    'UPDATE adjustments SET revoked_at = ?, revoked_by = ? WHERE id = ? AND revoked_at IS NULL'
+  ),
 
   // ---- game links ----
   putLink: db.prepare(`
@@ -550,6 +643,45 @@ module.exports = {
   countConduct: (g, u) => stmts.countConduct.get(g, u).n,
   clearConduct: (g, u) => stmts.clearConduct.run(g, u),
   purgeConduct: (olderThanMs) => stmts.purgeConduct.run(olderThanMs).changes,
+
+  // ---------------- manual adjustments ----------------
+  addAdjustment(guildId, userId, points, reason, authorId) {
+    const r = stmts.addAdjustment.run(guildId, userId, points, reason, authorId, now());
+    return r.lastInsertRowid;
+  },
+  /** Adjustments that fall inside a scoring window. Voided ones are excluded. */
+  adjustmentsIn: (g, u, from, to) => stmts.adjustmentsIn.all(g, u, from, to),
+  adjustmentsAll: (g, u, limit = 15) => stmts.adjustmentsAll.all(g, u, limit),
+  getAdjustment: (id, g) => stmts.getAdjustment.get(id, g),
+  voidAdjustment: (id, g, by) => {
+    const row = stmts.getAdjustment.get(id, g);
+    if (!row || row.voided_at) return null;
+    stmts.voidAdjustment.run(now(), by, id);
+    return row;
+  },
+
+  // ---------------- manual adjustments ----------------
+  addAdjustment({ guildId, userId, points, reason, authorId, expiresAt }) {
+    const info = stmts.addAdjustment.run({
+      guild_id: guildId,
+      user_id: userId,
+      points,
+      reason,
+      author_id: authorId,
+      created_at: now(),
+      expires_at: expiresAt ?? null,
+    });
+    return stmts.getAdjustment.get(info.lastInsertRowid, guildId);
+  },
+  activeAdjustments: (g, u) => stmts.activeAdjustments.all(g, u, now()),
+  allAdjustments: (g, u, limit = 20) => stmts.allAdjustments.all(g, u, limit),
+  getAdjustment: (id, g) => stmts.getAdjustment.get(id, g),
+  revokeAdjustment: (id, g, by) => {
+    const row = stmts.getAdjustment.get(id, g);
+    if (!row) return null;
+    if (stmts.revokeAdjustment.run(now(), by, id).changes === 0) return null;
+    return row;
+  },
 
   // ---------------- Minecraft name links ----------------
   linkGameName(guildId, ign, userId, linkedBy) {

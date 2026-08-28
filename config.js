@@ -512,6 +512,89 @@ module.exports = {
   },
 
   // ----------------------------------------------------------
+  // 6c. MANUAL POINTS — /deduct and /increase
+  // ----------------------------------------------------------
+  // The metrics cannot see everything. Somebody talks a player down from
+  // quitting, writes the rules page, or trains two new staff — none of that
+  // shows up in a ticket count. Equally, someone can hit every number and be
+  // sharp with members in a way no metric catches.
+  //
+  // So a human can move the score by hand. Three properties make that safe
+  // rather than corrosive, and all three are enforced in code:
+  //
+  //   1. CAPPED. One adjustment cannot exceed `maxPerAdjustment`, and the
+  //      total swing in a window is capped both ways. Without this, one Head
+  //      Mod with a grudge makes the entire measurement system decorative.
+  //   2. DATED, AND THEREFORE TEMPORARY. An adjustment counts only while it
+  //      sits inside the window being scored — 30 days for standing, the
+  //      trial length for a trial. A bad week should not follow somebody for
+  //      a year. For a lasting record, `/note kind:concern` is the tool.
+  //   3. NEVER SILENT. A reason is required, it is shown on their card, it
+  //      goes in the audit trail with your name on it, and the person is DM'd.
+  //      Points docked in secret are how a staff team learns to distrust you.
+  adjustments: {
+    enabled: true,
+
+    // Biggest single adjustment anyone can make.
+    maxPerAdjustment: 15,
+
+    // Total that can be stacked in one window. Deliberately smaller than the
+    // 35-point gap between the hold bar and the promote bar: adjustments
+    // should be able to tip a borderline case, never to manufacture one.
+    maxUp: 20,
+    maxDown: 25,
+
+    // DM the person. Strongly recommended to leave on — see property 3.
+    dmMember: true,
+
+    // Show each adjustment, with its reason and who made it, on the review
+    // card. Off would mean a score nobody can account for.
+    showOnCard: true,
+  },
+
+  // ----------------------------------------------------------
+  // 6c. MANUAL ADJUSTMENTS — /deduct and /increase
+  // ----------------------------------------------------------
+  // For the gap the numbers genuinely cannot cover. The score measures
+  // ACTIVITY: someone can sit at 90 having done something that should stop a
+  // promotion dead, and nothing in the metrics knows. It cuts both ways — the
+  // bot also can't see a dispute settled in DMs, an hour training a new hire
+  // in voice, or a build that took someone a weekend.
+  //
+  // These are LEDGER ENTRIES, not edits to the score. Every one is attributed,
+  // shown on the card next to the untouched raw score, expiring, and capped.
+  // Take any of those four away and the score stops being evidence.
+  adjustments: {
+    enabled: true,
+
+    // Most you can move someone in one go, and in total.
+    //
+    // Keep these small. The cap is the feature: if somebody needs moving
+    // further than 30 points, the honest answer is /demote or a removal, and
+    // docking 40 points is a way of avoiding that decision while looking like
+    // you made one.
+    maxSingle: 15,
+    maxTotal: 30,
+
+    // Adjustments lapse on their own after this many days. 0 = permanent,
+    // which you should avoid: a deduction for a bad week in March should not
+    // still be dragging someone down in September, and nobody ever remembers
+    // to take it off by hand. Override per-entry with the `days:` option.
+    expiryDays: 90,
+
+    // An active DEDUCTION blocks a READY verdict outright, whatever the score
+    // says. This is the clean answer to "high points but they did something
+    // bad": the promotion stops, and the reason is NAMED rather than smuggled
+    // into the number as arithmetic nobody can read back.
+    deductionBlocksPromotion: true,
+
+    // DM the person when one is issued. Strongly recommended on — a silent
+    // deduction is the worst version of this feature. They find out at their
+    // next review, months later, from a number.
+    notifySubject: true,
+  },
+
+  // ----------------------------------------------------------
   // 7. ANTI-FARMING (leave alone unless you have a reason)
   // ----------------------------------------------------------
   tracking: {

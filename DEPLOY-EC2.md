@@ -68,7 +68,7 @@ Expect to end on something like:
 
 ```
 [db] using .../data
-[commands] loaded 15: conduct, coverage, demote, digest, leaderboard, link, loa, note, promote, promotions, review, staffstats, sync, trial, vouch
+[commands] loaded 18: adjustments, conduct, coverage, deduct, demote, digest, increase, leaderboard, link, loa, note, promote, promotions, review, staffstats, sync, trial, vouch
 [ready] logged in as Quartermaster#8865
 [perms] manage staff: Head Mod+ · vouch: Head Mod+ · review/link: Head Mod+ · 3 override role(s) bypass everything
 [startup] 4 people can cast a /vouch (Head Mod+ and override roles) · 2 needed

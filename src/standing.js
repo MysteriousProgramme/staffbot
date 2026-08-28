@@ -2,6 +2,7 @@ const config = require('../config');
 const db = require('./db');
 const R = require('./ranks');
 const { computeScore, summariseVouches } = require('./scoring');
+const adjustments = require('./adjustments');
 
 /**
  * STANDING — the system for everyone above Trial Staff.
@@ -187,6 +188,13 @@ function assess(guildId, staffRow, { days = null } = {}) {
 
   const current = scoreWindow(guildId, staffRow.user_id, rankKey, from, to, windowDays);
 
+  // The ledger is applied to the CURRENT window only. It represents where
+  // things stand now; laying today's adjustments over last month's activity
+  // would make the trend line meaningless.
+  const adj = adjustments.apply(current.score, guildId, staffRow.user_id);
+  const rawScore = current.score;
+  current.score = adj.score;
+
   // The same length of window, immediately before this one.
   let previous = null;
   if (S().compareToPrevious !== false) {
@@ -249,6 +257,8 @@ function assess(guildId, staffRow, { days = null } = {}) {
     from,
     to,
     score: current.score,
+    rawScore,
+    adjustment: adj,
     breakdown: current.breakdown,
     skipped: current.skipped,
     metrics: current.metrics,
@@ -269,6 +279,11 @@ function assess(guildId, staffRow, { days = null } = {}) {
     onlyOneBadWindow: !excused && underNow && !drifting,
     verdict: standingVerdict({
       score: current.score,
+      rawScore,
+      adjustment: adj,
+      blockedByConduct:
+        (config.adjustments?.deductionBlocksPromotion !== false) &&
+        adjustments.hasDeduction(guildId, staffRow.user_id),
       rankName: rank?.name ?? rankKey,
       atTop,
       next,
@@ -338,6 +353,21 @@ function standingVerdict(a) {
   }
 
   if (a.score >= promoteBar) {
+    // Conduct outranks the number, and says so out loud. This is the whole
+    // answer to "they score 90 but did something bad": the promotion stops,
+    // and the reason is NAMED rather than buried in arithmetic nobody can
+    // read back six months later.
+    if (a.blockedByConduct) {
+      return {
+        code: 'conduct_hold',
+        label: 'ON HOLD — CONDUCT',
+        color: config.colors.borderline,
+        reason:
+          `Score ${a.score} clears the ${promoteBar} bar, but there is an active deduction on their record. ` +
+          'The numbers do not get to overrule that. Read the adjustments below, and either let it lapse or ' +
+          'revoke it with `/adjustments` if it has been resolved.',
+      };
+    }
     if (!a.tenureMet) {
       return {
         code: 'too_soon',
@@ -412,7 +442,7 @@ function watch(guildId) {
     }
 
     if (a.verdict.code === 'ready') ready.push(a);
-    else if (a.verdict.code === 'candidate' || a.verdict.code === 'too_soon') candidates.push(a);
+    else if (['candidate', 'too_soon', 'conduct_hold'].includes(a.verdict.code)) candidates.push(a);
     else if (a.verdict.code === 'drifting') drifting.push(a);
   }
 
