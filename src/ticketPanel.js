@@ -64,15 +64,55 @@ function buildPanel(guild) {
   if (!types.length) throw new Error('config.tickets.types is empty — there is nothing to offer.');
 
   const p = T().panel ?? {};
+  const grid = p.listStyle === 'grid';
+  const showList = p.showTypeList !== false;
 
   const body = [p.description ?? 'Choose a category below to open a ticket.'];
-  if (p.showTypeList !== false) body.push(typeList(types));
-  if (p.notice) body.push(`-# ⚠️  ${p.notice}`);
+
+  // In list mode the options live in the description. In grid mode they become
+  // inline fields, which Discord packs up to three to a row — past about four
+  // types the single column turns into a wall nobody reads to the bottom of.
+  if (showList && !grid) body.push(typeList(types));
+  if (p.notice && !grid) body.push(`-# ⚠️  ${p.notice}`);
 
   const embed = new EmbedBuilder()
     .setColor(p.color ?? config.colors.ticket)
     .setTitle(p.title ?? 'Support')
     .setDescription(body.join('\n\n').slice(0, 4096));
+
+  // Discord allows 25 fields on an embed, and silently rejects the whole
+  // message past that rather than truncating.
+  const fields = [];
+
+  if (showList && grid) {
+    for (const t of types) {
+      fields.push({
+        name: `${t.emoji ?? '🎫'} ${t.label}`.slice(0, 256),
+        value: (t.description || '​').slice(0, 1024),
+        inline: true,
+      });
+    }
+  }
+
+  // Anything else worth saying up front. The most useful thing to put here is
+  // what NOT to open a ticket for, with a link — a panel that answers the
+  // common question deflects more tickets than one that threatens punishment.
+  for (const f of p.fields ?? []) {
+    if (!f?.name || !f?.value) continue;
+    fields.push({
+      name: String(f.name).slice(0, 256),
+      value: String(f.value).slice(0, 1024),
+      inline: Boolean(f.inline),
+    });
+  }
+
+  // Grid mode pushes the notice to the end, because fields render below the
+  // description and a warning above the options reads as shouting first.
+  if (p.notice && grid) {
+    fields.push({ name: '​', value: `-# ⚠️  ${p.notice}`.slice(0, 1024), inline: false });
+  }
+
+  if (fields.length) embed.addFields(fields.slice(0, 25));
 
   const thumb = resolveImage(p.thumbnailUrl, guild, 'icon');
   if (thumb) embed.setThumbnail(thumb);

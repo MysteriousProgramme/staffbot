@@ -1529,6 +1529,64 @@ check('every command file has a unique name', () => {
   assert.strictEqual(new Set(names).size, names.length, 'two commands share a name');
 });
 
+// ---- panel layout ----
+
+check('grid layout moves the options into inline fields', () => {
+  const saved = TCFG.panel;
+  TCFG.panel = { ...saved, listStyle: 'grid' };
+  const e = ticketPanel.buildPanel().embeds[0].toJSON();
+  TCFG.panel = saved;
+
+  const optionFields = (e.fields ?? []).filter((f) => f.inline);
+  assert.strictEqual(optionFields.length, TCFG.types.length, JSON.stringify(e.fields));
+  assert.ok(!/\*\*/.test(e.description ?? ''), 'the list should have left the description');
+});
+
+check('the notice sits after the options in grid mode, not before', () => {
+  const saved = TCFG.panel;
+  TCFG.panel = { ...saved, listStyle: 'grid', notice: 'be sensible' };
+  const e = ticketPanel.buildPanel().embeds[0].toJSON();
+  TCFG.panel = saved;
+
+  const last = e.fields[e.fields.length - 1];
+  assert.ok(/be sensible/.test(last.value), 'the warning should be the last thing, not the first');
+  assert.ok(!/be sensible/.test(e.description ?? ''));
+});
+
+check('custom panel fields are rendered', () => {
+  const saved = TCFG.panel;
+  TCFG.panel = {
+    ...saved,
+    fields: [{ name: '⏱️ How long?', value: 'Usually under an hour.', inline: false }],
+  };
+  const e = ticketPanel.buildPanel().embeds[0].toJSON();
+  TCFG.panel = saved;
+
+  assert.ok((e.fields ?? []).some((f) => /How long/.test(f.name)), JSON.stringify(e.fields));
+});
+
+check('a malformed custom field is skipped rather than breaking the panel', () => {
+  const saved = TCFG.panel;
+  TCFG.panel = { ...saved, fields: [{ name: 'no value' }, null, { value: 'no name' }] };
+  const e = ticketPanel.buildPanel().embeds[0].toJSON();
+  TCFG.panel = saved;
+
+  assert.strictEqual((e.fields ?? []).length, 0);
+});
+
+check('the embed never exceeds the 25-field limit Discord imposes', () => {
+  const saved = { panel: TCFG.panel, types: TCFG.types };
+  TCFG.types = Array.from({ length: 25 }, (_, i) => ({
+    key: 'k' + i, label: 'Type ' + i, description: 'x', categoryId: '1', questions: [],
+  }));
+  TCFG.panel = { ...saved.panel, listStyle: 'grid', notice: 'x',
+    fields: Array.from({ length: 10 }, (_, i) => ({ name: 'f' + i, value: 'v' })) };
+  const e = ticketPanel.buildPanel().embeds[0].toJSON();
+  Object.assign(TCFG, saved);
+
+  assert.ok((e.fields ?? []).length <= 25, `${e.fields.length} fields would be rejected outright`);
+});
+
 // ---- naming ----
 
 check('channel names are padded and carry the priority', () => {

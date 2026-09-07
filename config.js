@@ -325,9 +325,22 @@ const config = {
       // (needs a boosted server). A 1100x256-ish PNG looks best. null = none.
       imageUrl: null,
 
-      // Repeat the options as a list above the dropdown. The dropdown already
-      // names them, so turn this off if you want a compact panel.
+      // Repeat the options above the dropdown. The dropdown already names
+      // them, so turn this off if you want a bare panel.
       showTypeList: true,
+
+      // 'lines' stacks them one per row, which reads well up to about four.
+      // 'grid' makes each one an inline field instead — Discord packs those
+      // up to three to a row, so five options stop being a wall of text.
+      listStyle: 'lines',
+
+      // Anything else worth saying up front, rendered under the options.
+      // The most useful thing to put here is what NOT to open a ticket for,
+      // with a channel link: a panel that answers the common question
+      // deflects more junk than one that threatens punishment.
+      //
+      //   { name: '⏱️ How long?', value: 'Usually under an hour.', inline: false }
+      fields: [],
 
       // Small grey line under the list. Good for the rules people ignore.
       notice: 'Opening a ticket for no reason may result in a mute or a ban.',
