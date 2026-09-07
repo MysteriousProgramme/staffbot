@@ -1599,6 +1599,33 @@ check('the embed never exceeds the 25-field limit Discord imposes', () => {
   assert.ok((e.fields ?? []).length <= 25, `${e.fields.length} fields would be rejected outright`);
 });
 
+// ---- the pinned header ----
+
+check('the header shows who has it, or that nobody does', () => {
+  const waiting = tickets.headerFields({ priority: 'normal' });
+  assert.ok(/Waiting/.test(waiting[0].value), waiting[0].value);
+
+  const claimed = tickets.headerFields({ priority: 'normal', claimed_by: '42' });
+  assert.ok(claimed[0].value.includes('<@42>'), 'a mention renders in a field value, a name would need fetching');
+});
+
+check('the header names the priority', () => {
+  assert.ok(/Urgent/.test(tickets.headerFields({ priority: 'urgent' })[1].value));
+  assert.ok(/Normal/.test(tickets.headerFields({})[1].value), 'a missing priority should read as normal');
+});
+
+check('high and urgent override the type colour, lower priorities do not', () => {
+  const type = { color: 0x5865f2 };
+  assert.strictEqual(tickets.accentFor({ priority: 'normal' }, type), 0x5865f2);
+  assert.strictEqual(tickets.accentFor({ priority: 'low' }, type), 0x5865f2);
+  assert.strictEqual(tickets.accentFor({ priority: 'high' }, type), tickets.PRIORITIES.high.color);
+  assert.strictEqual(tickets.accentFor({ priority: 'urgent' }, type), tickets.PRIORITIES.urgent.color);
+});
+
+check('a type with no colour falls back to the priority colour', () => {
+  assert.strictEqual(tickets.accentFor({ priority: 'normal' }, {}), tickets.PRIORITIES.normal.color);
+});
+
 // ---- custom emoji ----
 
 check('a server emoji is recognised, in both static and animated form', () => {

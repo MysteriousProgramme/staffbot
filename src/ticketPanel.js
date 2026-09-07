@@ -179,8 +179,18 @@ async function openFor(interaction, type, answers) {
 
   db.addAudit(interaction.guild.id, interaction.user.id, interaction.user.id, 'ticket_open', `#${tickets.pad(ticket.number)} ${type.key}`);
 
+  // Only this person sees it, so it can afford to say what happens next
+  // rather than just handing over a channel link.
   return interaction.editReply({
-    content: `Your ticket is open: <#${channel.id}>`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor(type.color ?? config.colors.ticket)
+        .setTitle(`Ticket #${tickets.pad(ticket.number)} opened`)
+        .setDescription(
+          `Head to <#${channel.id}> — everything happens in there.\n` +
+            '-# Only you and the staff who handle this type can see it.'
+        ),
+    ],
   });
 }
 

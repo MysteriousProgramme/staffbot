@@ -263,25 +263,56 @@ function notice(color, text, iconURL) {
   return new EmbedBuilder().setColor(color).setAuthor(author);
 }
 
-const UNCLAIMED_FOOTER = 'Unclaimed · staff, use the buttons below';
+const PIN_FOOTER = 'Staff — use the buttons below';
+const F_STATUS = 'Status';
+const F_PRIORITY = 'Priority';
+
+/**
+ * The two fields at the top of the pinned message, rebuilt whenever anything
+ * about the ticket changes. Scrolling to the top of a long ticket should
+ * answer "whose is this and how urgent" without reading a word of the thread.
+ *
+ * The claimer is a raw mention rather than a resolved name: field values render
+ * mentions, so nothing has to be fetched to keep this current.
+ */
+function headerFields(ticket) {
+  const p = PRIORITIES[ticket.priority] ?? PRIORITIES.normal;
+  return [
+    {
+      name: F_STATUS,
+      value: ticket.claimed_by ? `🟢 <@${ticket.claimed_by}>` : '🟡 Waiting for staff',
+      inline: true,
+    },
+    { name: F_PRIORITY, value: `${p.emoji} ${p.label}`, inline: true },
+  ];
+}
+
+/**
+ * High and urgent override the type's own colour. A red type badge is
+ * decoration; a red URGENT ticket is information, and it wins.
+ */
+function accentFor(ticket, type) {
+  const key = ticket.priority ?? 'normal';
+  if (key === 'urgent' || key === 'high') return PRIORITIES[key].color;
+  return type?.color ?? PRIORITIES.normal.color;
+}
 
 function openingEmbed(ticket, type, opener, answers) {
-  const priority = PRIORITIES[ticket.priority] ?? PRIORITIES.normal;
-
   // A server emoji in the title would print as literal <:name:id>, so it goes
   // to the front of the description instead, where Discord does resolve it.
   const emoji = type?.emoji ?? '🎫';
   const custom = isCustomEmoji(emoji);
 
   const embed = new EmbedBuilder()
-    .setColor(type?.color ?? priority.color)
+    .setColor(accentFor(ticket, type))
     .setAuthor({ name: nameOf(opener), iconURL: avatarOf(opener) })
     .setTitle(`${custom ? '' : emoji + '  '}${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
     .setDescription(
       `${custom ? emoji + ' ' : ''}Thanks for reaching out — a staff member will pick this up as soon as one is free.\n` +
         '-# Screenshots, usernames, timestamps: the more that is in here, the faster this goes.'
     )
-    .setFooter({ text: UNCLAIMED_FOOTER })
+    .addFields(headerFields(ticket))
+    .setFooter({ text: PIN_FOOTER })
     .setTimestamp(ticket.opened_at);
 
   for (const q of (type?.questions ?? []).slice(0, 5)) {
@@ -378,7 +409,13 @@ async function createTicket({ guild, opener, type, answers = {} }) {
  * effort: a ticket whose opening message was deleted still works fine
  * through /ticket, so a failure here is never worth surfacing.
  */
-async function refreshButtons(channel, claimedBy, claimerName) {
+/**
+ * Repaint the pinned message so its header and buttons match the database.
+ *
+ * Best effort throughout: a ticket whose pinned message was deleted still
+ * works fine through /ticket, so a failure here is never worth surfacing.
+ */
+async function refreshPin(channel, ticket) {
   try {
     // fetchPins() replaced fetchPinned() partway through discord.js v14, and
     // package.json accepts either side of that line.
@@ -389,29 +426,31 @@ async function refreshButtons(channel, claimedBy, claimerName) {
     const mine = pins.find((m) => m.author.id === channel.client.user.id && m.components?.length);
     if (!mine) return;
 
-    const payload = { components: [ticketButtons(claimedBy)] };
+    const payload = { components: [ticketButtons(ticket.claimed_by)] };
 
-    // Keep the pinned header honest about who owns this. Scrolling up to the
-    // top of a long ticket should answer "whose is this" without hunting for
-    // the claim message somewhere in the middle.
     const existing = mine.embeds?.[0];
     if (existing) {
+      // Rebuild the two header fields in place and leave the answers alone —
+      // they are the only copy of what the person originally typed.
+      const answers = (existing.fields ?? []).filter(
+        (f) => f.name !== F_STATUS && f.name !== F_PRIORITY
+      );
       payload.embeds = [
-        EmbedBuilder.from(existing).setFooter({
-          text: claimedBy ? `Claimed by ${claimerName ?? 'staff'}` : UNCLAIMED_FOOTER,
-        }),
+        EmbedBuilder.from(existing)
+          .setColor(accentFor(ticket, typeByKey(ticket.type_key)))
+          .setFields([...headerFields(ticket), ...answers]),
       ];
     }
 
     await mine.edit(payload);
   } catch {
-    /* the buttons are a convenience, not the source of truth */
+    /* the pin is a convenience, not the source of truth */
   }
 }
 
 async function claim(channel, ticket, member) {
   db.setClaim(channel.id, member.id);
-  await refreshButtons(channel, member.id, nameOf(member));
+  await refreshPin(channel, db.getTicket(channel.id));
   await channel.send({
     embeds: [notice(config.colors.ready, `${nameOf(member)} claimed this ticket`, avatarOf(member))],
   });
@@ -419,7 +458,7 @@ async function claim(channel, ticket, member) {
 
 async function unclaim(channel, ticket) {
   db.clearClaim(channel.id);
-  await refreshButtons(channel, null);
+  await refreshPin(channel, db.getTicket(channel.id));
   await channel.send({
     embeds: [notice(config.colors.neutral, 'Unclaimed — back up for grabs')],
   });
@@ -428,7 +467,7 @@ async function unclaim(channel, ticket) {
 async function transfer(channel, ticket, target, actor) {
   db.setClaim(channel.id, target.id);
   db.addAudit(channel.guildId, actor.id, target.id, 'ticket_transfer', `#${pad(ticket.number)}`);
-  await refreshButtons(channel, target.id, nameOf(target));
+  await refreshPin(channel, db.getTicket(channel.id));
   await channel.send({
     content: `<@${target.id}>`,
     embeds: [
@@ -478,6 +517,7 @@ async function escalate(channel, ticket, actor, reason) {
   }
 
   db.markEscalated(channel.id, actor.id);
+  await refreshPin(channel, db.getTicket(channel.id));
   db.addAudit(channel.guildId, actor.id, ticket.opener_id ?? actor.id, 'ticket_escalate', `#${pad(ticket.number)}`);
 
   const embed = new EmbedBuilder()
@@ -539,6 +579,8 @@ async function setPriority(channel, ticket, priority) {
   } catch {
     renamed = false;
   }
+
+  await refreshPin(channel, db.getTicket(channel.id));
 
   const p = PRIORITIES[priority];
   await channel.send({ embeds: [notice(p.color, `${p.emoji}  Priority set to ${p.label}`)] });
@@ -805,7 +847,9 @@ module.exports = {
   openBlockedReason,
   createTicket,
   ticketButtons,
-  refreshButtons,
+  refreshPin,
+  headerFields,
+  accentFor,
   claim,
   unclaim,
   transfer,
