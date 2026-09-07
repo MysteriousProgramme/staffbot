@@ -343,6 +343,10 @@ const config = {
     //   pingRoleIds pinged once when the ticket opens
     //   color       accent colour of the ticket's opening embed. Omit to
     //               colour it by priority instead.
+    //   staffRoleIds OPTIONAL, and it REPLACES the global staffRoleIds above
+    //               rather than adding to it. This is how you keep a report
+    //               about a Staff Team member away from the Staff Team — omit
+    //               it and everyone in the global list can read every ticket.
     //   questions   0-5 fields shown as a form before the channel is made.
     //               Omit or leave empty to open with no questions asked.
     types: [

@@ -201,15 +201,28 @@ function overwritesFor(guild, openerId, type) {
 
   if (openerId) rows.push({ id: openerId, allow });
 
-  const staffRoles = new Set([
-    ...(T().staffRoleIds ?? []),
-    ...(type?.pingRoleIds ?? []),
-  ]);
+  // A type may narrow who can see it, and narrowing REPLACES the global list
+  // rather than adding to it. That is the whole point: a report about a Staff
+  // Team member must not be readable by the Staff Team, and it would be if the
+  // two lists were merged.
+  const base = type?.staffRoleIds ?? T().staffRoleIds ?? [];
+  const staffRoles = new Set([...base, ...(type?.pingRoleIds ?? [])]);
+
   for (const id of staffRoles) {
     if (guild.roles.cache.has(id)) rows.push({ id, allow });
   }
 
   return rows;
+}
+
+/**
+ * The roles that can see a ticket of this type. Exported so the config check
+ * can say out loud who ends up with access, rather than leaving it to be
+ * discovered by the person being reported.
+ */
+function audienceFor(type) {
+  const base = type?.staffRoleIds ?? T().staffRoleIds ?? [];
+  return [...new Set([...base, ...(type?.pingRoleIds ?? [])])];
 }
 
 // Users, GuildMembers and the odd bare {id} all end up in these embeds.
@@ -767,6 +780,8 @@ module.exports = {
   typeByKey,
   ticketCategoryIds,
   isTicketStaff,
+  overwritesFor,
+  audienceFor,
   channelNameFor,
   pad,
   openBlockedReason,

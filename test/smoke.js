@@ -1660,6 +1660,65 @@ check('a configured ticket staff role counts even off the ladder', () => {
   TCFG.staffRoleIds = saved;
 });
 
+// ---- who can see a ticket ----
+
+const fakeGuild = (roleIds) => ({
+  roles: { everyone: { id: 'everyone' }, cache: new Map(roleIds.map((r) => [r, {}])) },
+  client: { user: { id: 'bot' } },
+});
+
+const audience = (guild, type) =>
+  tickets
+    .overwritesFor(guild, 'opener-1', type)
+    .filter((o) => o.allow)
+    .map((o) => o.id)
+    .filter((id) => id !== 'bot' && id !== 'opener-1');
+
+check('by default every configured staff role can see a ticket', () => {
+  const guild = fakeGuild(['r-staff', 'r-headmod']);
+  const saved = TCFG.staffRoleIds;
+  TCFG.staffRoleIds = ['r-staff', 'r-headmod'];
+  const seen = audience(guild, { key: 'support', pingRoleIds: [] });
+  TCFG.staffRoleIds = saved;
+  assert.deepStrictEqual(seen.sort(), ['r-headmod', 'r-staff']);
+});
+
+check('a type with its own staffRoleIds REPLACES the global list', () => {
+  // The reason this exists: a report about a Staff Team member must not be
+  // readable by the Staff Team. Merging the two lists would defeat it.
+  const guild = fakeGuild(['r-staff', 'r-headmod']);
+  const saved = TCFG.staffRoleIds;
+  TCFG.staffRoleIds = ['r-staff', 'r-headmod'];
+  const seen = audience(guild, { key: 'report', staffRoleIds: ['r-headmod'], pingRoleIds: [] });
+  TCFG.staffRoleIds = saved;
+  assert.deepStrictEqual(seen, ['r-headmod'], 'the global roles leaked into a restricted type');
+  assert.ok(!seen.includes('r-staff'), 'the reported staff role could still read the report');
+});
+
+check('pinged roles are added on top of a narrowed list', () => {
+  const guild = fakeGuild(['r-staff', 'r-headmod', 'r-owner']);
+  const saved = TCFG.staffRoleIds;
+  TCFG.staffRoleIds = ['r-staff'];
+  const seen = audience(guild, { staffRoleIds: ['r-headmod'], pingRoleIds: ['r-owner'] });
+  TCFG.staffRoleIds = saved;
+  assert.deepStrictEqual(seen.sort(), ['r-headmod', 'r-owner']);
+});
+
+check('everyone is denied, and the opener and bot are always allowed', () => {
+  const guild = fakeGuild(['r-staff']);
+  const rows = tickets.overwritesFor(guild, 'opener-1', { pingRoleIds: [] });
+  const everyone = rows.find((r) => r.id === 'everyone');
+  assert.ok(everyone?.deny?.length, '@everyone must be denied ViewChannel');
+  assert.ok(rows.some((r) => r.id === 'opener-1' && r.allow), 'the opener cannot see their own ticket');
+  assert.ok(rows.some((r) => r.id === 'bot' && r.allow), 'the bot locked itself out');
+});
+
+check('audienceFor agrees with the overwrites it explains', () => {
+  const type = { staffRoleIds: ['r-headmod'], pingRoleIds: ['r-owner'] };
+  const guild = fakeGuild(['r-headmod', 'r-owner']);
+  assert.deepStrictEqual(tickets.audienceFor(type).sort(), audience(guild, type).sort());
+});
+
 // ---- escalation ----
 
 check('escalation targets the rank above you', () => {
