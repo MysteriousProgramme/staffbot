@@ -310,9 +310,10 @@ const config = {
     // The message /ticketpanel posts. Everything here is cosmetic — change it
     // freely and re-run /ticketpanel, the panel holds no state.
     panel: {
-      title: 'Support',
+      title: 'Tempest SMP · Support',
       description:
-        'Pick the option that fits below and a private channel will open for you and the staff team.',
+        'Pick the option that fits and a private channel opens for you and the staff team.',
+
       placeholder: 'Choose a ticket type…',
 
       // Accent bar down the left of the embed. null = colors.ticket.
@@ -321,8 +322,8 @@ const config = {
       // Small image, top right. 'server' uses your server icon.
       thumbnailUrl: 'server',
 
-      // Wide banner across the bottom. 'server' uses your server banner
-      // (needs a boosted server). A 1100x256-ish PNG looks best. null = none.
+      // Wide banner across the bottom. 'server' uses your server banner (needs
+      // a boosted server). A 1100x256-ish PNG looks best. null = none.
       imageUrl: null,
 
       // Repeat the options above the dropdown. The dropdown already names
@@ -332,20 +333,28 @@ const config = {
       // 'lines' stacks them one per row, which reads well up to about four.
       // 'grid' makes each one an inline field instead — Discord packs those
       // up to three to a row, so five options stop being a wall of text.
-      listStyle: 'lines',
+      listStyle: 'grid',
 
       // Anything else worth saying up front, rendered under the options.
       // The most useful thing to put here is what NOT to open a ticket for,
-      // with a channel link: a panel that answers the common question
-      // deflects more junk than one that threatens punishment.
-      //
-      //   { name: '⏱️ How long?', value: 'Usually under an hour.', inline: false }
-      fields: [],
+      // with a channel link: a panel that answers the common question deflects
+      // more junk than one that threatens punishment. Uncomment the second
+      // entry and swap in your rules channel to do that.
+      fields: [
+        {
+          name: '⏱️ How long will it take?',
+          value:
+            'Usually under an hour while staff are online. Appeals and partnerships can take a day.',
+          inline: false,
+        },
+        // {
+        //   name: '📕 Before you open one',
+        //   value: 'Most answers are already in <#YOUR_RULES_CHANNEL_ID>.',
+        //   inline: false,
+        // },
+      ],
 
-      // Small grey line under the list. Good for the rules people ignore.
-      notice: 'Opening a ticket for no reason may result in a mute or a ban.',
-
-      // Bottom line of the embed.
+      notice: 'Opening a ticket for no reason may result in a mute, kick or ban.',
       footer: 'One ticket at a time · a staff member will reply as soon as one is free',
     },
 
@@ -360,7 +369,7 @@ const config = {
     //               title or footer, so keep them out of panel.title and
     //               panel.footer; npm run check warns if you do not.
     //   categoryId  where this type's channels are created (REQUIRED)
-    //   pingRoleIds pinged once when the ticket opens
+    //   pingRoleIds pinged once when the ticket opens, and granted access
     //   color       accent colour of the ticket's opening embed. Omit to
     //               colour it by priority instead.
     //   staffRoleIds OPTIONAL, and it REPLACES the global staffRoleIds above
@@ -368,18 +377,20 @@ const config = {
     //               about a Staff Team member away from the Staff Team — omit
     //               it and everyone in the global list can read every ticket.
     //   questions   0-5 fields shown as a form before the channel is made.
-    //               Omit or leave empty to open with no questions asked.
+    //               The FIRST one becomes the ticket's subject, so put the
+    //               summary there rather than the username.
     types: [
       {
         key: 'support',
-        label: 'General Support',
-        emoji: '🎫',
-        description: 'Questions, help, anything else',
+        label: 'Server Issue or Question',
+        emoji: '🛠️',
+        description: 'Bugs, lag, lost items, anything else',
         color: 0x5865f2,
         categoryId: '1510607597030609047',
         pingRoleIds: ['1531486709873639454'],
         questions: [
           { id: 'subject', label: 'Short summary', style: 'short', required: true, max: 100 },
+          { id: 'ign', label: 'Your Minecraft username', style: 'short', required: true, max: 16 },
           { id: 'details', label: 'What do you need help with?', style: 'paragraph', required: true, max: 1000 },
         ],
       },
@@ -387,29 +398,97 @@ const config = {
         key: 'report',
         label: 'Report a Player',
         emoji: '🚨',
-        description: 'Rule breaking, cheating, harassment',
+        description: 'Griefing, cheating, harassment',
         color: 0xef4444,
         categoryId: '1510607597030609047',
         pingRoleIds: ['1531486709873639454'],
         questions: [
           { id: 'subject', label: 'Who are you reporting?', style: 'short', required: true, max: 100 },
-          { id: 'details', label: 'What happened?', style: 'paragraph', required: true, max: 1000 },
-          { id: 'evidence', label: 'Evidence (links to screenshots/clips)', style: 'paragraph', required: false, max: 500 },
+          { id: 'ign', label: 'Your Minecraft username', style: 'short', required: true, max: 16 },
+          { id: 'details', label: 'What happened, and when?', style: 'paragraph', required: true, max: 1000 },
+          { id: 'evidence', label: 'Evidence (screenshots or clips)', style: 'paragraph', required: false, max: 500 },
         ],
       },
       {
-        key: 'appeal',
-        label: 'Ban Appeal',
-        emoji: '⚖️',
-        description: 'Appeal a punishment on your account',
-        color: 0xfbbf24,
+        // The reason staffRoleIds exists. An empty list means NO rank role can
+        // read this, so the only people who see it are the owner roles pinged
+        // below — including when the report is about a Head Mod.
+        key: 'staffreport',
+        label: 'Report a Staff Member',
+        emoji: '🛡️',
+        description: 'Goes to the owners only — no staff can see it',
+        color: 0xa855f7,
         categoryId: '1510607597030609047',
-        pingRoleIds: ['1531486709873639454'],
+        staffRoleIds: [],
+        pingRoleIds: [
+          '1503657119843614720',   // Founder
+          '1514544622423113809',   // Owner
+          '1518522106739032156',   // Co-Owner
+        ],
         questions: [
-          { id: 'subject', label: 'Your username', style: 'short', required: true, max: 100 },
-          { id: 'details', label: 'Why should this be overturned?', style: 'paragraph', required: true, max: 1000 },
+          { id: 'subject', label: 'Which staff member?', style: 'short', required: true, max: 100 },
+          { id: 'ign', label: 'Your Minecraft username', style: 'short', required: true, max: 16 },
+          { id: 'details', label: 'What happened, and when?', style: 'paragraph', required: true, max: 1000 },
+          { id: 'evidence', label: 'Evidence (screenshots or clips)', style: 'paragraph', required: false, max: 500 },
         ],
       },
+      {
+        // Head Mod and above. Whoever issued the punishment should not be the
+        // person reading the appeal against it.
+        key: 'appeal',
+        label: 'Punishment Appeal',
+        emoji: '⚖️',
+        description: 'Appeal a ban, mute or kick — one per punishment',
+        color: 0xfbbf24,
+        categoryId: '1510607597030609047',
+        staffRoleIds: ['1513855451555696740'],
+        pingRoleIds: ['1513855451555696740'],
+        questions: [
+          { id: 'subject', label: 'Your Minecraft username', style: 'short', required: true, max: 16 },
+          { id: 'punishment', label: 'What punishment, and when?', style: 'short', required: true, max: 100 },
+          { id: 'staff', label: 'Which staff member issued it?', style: 'short', required: false, max: 100 },
+          { id: 'details', label: 'Why should it be overturned?', style: 'paragraph', required: true, max: 1000 },
+        ],
+      },
+      {
+        key: 'partnership',
+        label: 'Partnership',
+        emoji: '🤝',
+        description: 'Server partnerships and collaborations',
+        color: 0x22c55e,
+        categoryId: '1510607597030609047',
+        staffRoleIds: [],
+        pingRoleIds: [
+          '1514544622423113809',   // Owner
+          '1518522106739032156',   // Co-Owner
+        ],
+        questions: [
+          { id: 'subject', label: 'Your server or community name', style: 'short', required: true, max: 100 },
+          { id: 'size', label: 'Members and average players online', style: 'short', required: true, max: 50 },
+          { id: 'invite', label: 'Invite link', style: 'short', required: true, max: 100 },
+          { id: 'details', label: 'What are you proposing?', style: 'paragraph', required: true, max: 1000 },
+        ],
+      },
+
+      // Staff applications are closed, so the option is not offered. Paste this
+      // back in when they reopen and re-run /ticketpanel.
+      // {
+      //   key: 'application',
+      //   label: 'Staff Application',
+      //   emoji: '📋',
+      //   description: 'Applications are open',
+      //   color: 0x818cf8,
+      //   categoryId: '1510607597030609047',
+      //   staffRoleIds: ['1513855451555696740'],
+      //   pingRoleIds: ['1513855451555696740'],
+      //   questions: [
+      //     { id: 'subject', label: 'Your Minecraft username', style: 'short', required: true, max: 16 },
+      //     { id: 'age', label: 'Age and timezone', style: 'short', required: true, max: 50 },
+      //     { id: 'hours', label: 'Hours per week you can be active', style: 'short', required: true, max: 100 },
+      //     { id: 'experience', label: 'Previous staff experience', style: 'paragraph', required: false, max: 1000 },
+      //     { id: 'details', label: 'Why do you want to be staff?', style: 'paragraph', required: true, max: 1000 },
+      //   ],
+      // },
     ],
   },
 

@@ -1566,12 +1566,24 @@ check('custom panel fields are rendered', () => {
 });
 
 check('a malformed custom field is skipped rather than breaking the panel', () => {
+  // Everything else that produces a field is switched off, so whatever comes
+  // back can only have come from the fields list.
   const saved = TCFG.panel;
-  TCFG.panel = { ...saved, fields: [{ name: 'no value' }, null, { value: 'no name' }] };
+  TCFG.panel = {
+    ...saved,
+    listStyle: 'lines',
+    showTypeList: false,
+    notice: null,
+    fields: [{ name: 'no value' }, null, { value: 'no name' }, { name: 'ok', value: 'kept' }],
+  };
   const e = ticketPanel.buildPanel().embeds[0].toJSON();
   TCFG.panel = saved;
 
-  assert.strictEqual((e.fields ?? []).length, 0);
+  assert.deepStrictEqual(
+    (e.fields ?? []).map((f) => f.name),
+    ['ok'],
+    'a half-written field made it onto the panel'
+  );
 });
 
 check('the embed never exceeds the 25-field limit Discord imposes', () => {
