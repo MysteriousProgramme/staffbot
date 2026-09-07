@@ -72,6 +72,32 @@ function isTicketStaff(member) {
 const CUSTOM_EMOJI = /^<a?:\w{2,32}:\d{17,20}>$/;
 const isCustomEmoji = (e) => CUSTOM_EMOJI.test(String(e ?? ''));
 
+/**
+ * May this person let go of a claim that is not theirs?
+ *
+ * A claim is the record of who owns a piece of work, and it decides who gets
+ * the ticketsHandled credit for it. Anyone being able to drop or reassign
+ * somebody else's claim makes that record worthless — and worse, it is silent:
+ * the person who did the work just stops being the claimer.
+ *
+ * So the claimer can release their own, and manageStaff (Head Mod and above,
+ * plus the override roles) can release anyone's — because someone does
+ * eventually go offline still holding a ticket, and that has to be fixable.
+ *
+ * Returns null when allowed, or a sentence explaining the refusal.
+ */
+function claimReleaseBlocked(member, ticket) {
+  if (!ticket?.claimed_by) return null;
+  if (String(ticket.claimed_by) === String(member?.id)) return null;
+  if (R.meetsRequirement(member, config.permissions.manageStaff)) return null;
+
+  const rank = R.rankByKey(config.permissions.manageStaff)?.name ?? 'a senior staff member';
+  return (
+    `<@${ticket.claimed_by}> is handling this one. Ask them to unclaim it, ` +
+    `or a ${rank} can take it off them.`
+  );
+}
+
 const pad = (n) => String(n).padStart(T().numberPadding ?? 4, '0');
 
 function channelNameFor(number, priority) {
@@ -840,6 +866,7 @@ module.exports = {
   ticketCategoryIds,
   isTicketStaff,
   isCustomEmoji,
+  claimReleaseBlocked,
   overwritesFor,
   audienceFor,
   channelNameFor,

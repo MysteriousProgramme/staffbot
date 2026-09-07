@@ -134,6 +134,10 @@ module.exports = {
 
       case 'unclaim': {
         if (!ticket.claimed_by) return err(interaction, 'Nobody has claimed this.');
+
+        const blocked = tickets.claimReleaseBlocked(interaction.member, ticket);
+        if (blocked) return err(interaction, blocked);
+
         await tickets.unclaim(interaction.channel, ticket);
         return note(interaction, 'Unclaimed.');
       }
@@ -144,6 +148,11 @@ module.exports = {
         if (!target) return err(interaction, 'That user is not in this server.');
         if (!tickets.isTicketStaff(target)) return err(interaction, `**${user.username}** is not staff.`);
         if (target.id === interaction.user.id) return err(interaction, 'It is already yours.');
+
+        // Handing someone else's ticket to a third person is the same problem
+        // as unclaiming it, so it answers to the same rule.
+        const blocked = tickets.claimReleaseBlocked(interaction.member, ticket);
+        if (blocked) return err(interaction, blocked);
 
         await tickets.transfer(interaction.channel, ticket, target, interaction.user);
         return note(interaction, `Handed to <@${target.id}>.`);

@@ -1599,6 +1599,42 @@ check('the embed never exceeds the 25-field limit Discord imposes', () => {
   assert.ok((e.fields ?? []).length <= 25, `${e.fields.length} fields would be rejected outright`);
 });
 
+// ---- who may drop a claim ----
+
+const topRank = R.ranks[R.ranks.length - 1].roleId;
+const juniorRank = R.ranks[0].roleId;
+
+check('the claimer can unclaim their own ticket', () => {
+  const mine = fakeMember([juniorRank], 'staff-a');
+  assert.strictEqual(tickets.claimReleaseBlocked(mine, { claimed_by: 'staff-a' }), null);
+});
+
+check('another staff member cannot unclaim it', () => {
+  // The whole point: a claim decides who gets the ticketsHandled credit, so
+  // anyone being able to drop it silently rewrites who did the work.
+  const other = fakeMember([juniorRank], 'staff-b');
+  const blocked = tickets.claimReleaseBlocked(other, { claimed_by: 'staff-a' });
+  assert.ok(blocked, 'a peer was allowed to drop a claim that was not theirs');
+  assert.ok(blocked.includes('<@staff-a>'), blocked);
+});
+
+check('manageStaff can take a claim off someone', () => {
+  // Somebody does eventually go offline still holding a ticket.
+  const boss = fakeMember([topRank], 'boss-1');
+  assert.strictEqual(tickets.claimReleaseBlocked(boss, { claimed_by: 'staff-a' }), null);
+});
+
+check('an unclaimed ticket is free for anyone', () => {
+  const other = fakeMember([juniorRank], 'staff-b');
+  assert.strictEqual(tickets.claimReleaseBlocked(other, { claimed_by: null }), null);
+  assert.strictEqual(tickets.claimReleaseBlocked(other, {}), null);
+});
+
+check('the check survives ids arriving as different types', () => {
+  const mine = fakeMember([juniorRank], '12345');
+  assert.strictEqual(tickets.claimReleaseBlocked(mine, { claimed_by: 12345 }), null);
+});
+
 // ---- the pinned header ----
 
 check('the header shows who has it, or that nobody does', () => {

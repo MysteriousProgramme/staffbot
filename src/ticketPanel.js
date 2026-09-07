@@ -272,6 +272,12 @@ async function handleButton(interaction) {
 
   if (action === 'unclaim') {
     if (!ticket.claimed_by) return interaction.reply(ephemeral('Nobody has claimed this.'));
+
+    // The button is on a shared pinned message, so everyone sees it. The check
+    // has to happen on the click rather than by hiding it.
+    const blocked = tickets.claimReleaseBlocked(interaction.member, ticket);
+    if (blocked) return interaction.reply(ephemeral(blocked));
+
     await interaction.deferUpdate();
     return tickets.unclaim(interaction.channel, ticket);
   }
