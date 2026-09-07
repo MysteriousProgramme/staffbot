@@ -1,6 +1,7 @@
 const { Events, ChannelType } = require('discord.js');
 const config = require('../config');
 const db = require('./db');
+const nativeTickets = require('./tickets');
 
 /**
  * Ticket King integration.
@@ -164,28 +165,15 @@ function handleMessage(message) {
 /**
  * Who gets the ticketsHandled credit?
  *
- *   1. The claimer, if Ticket King's /claim was detected. They owned it.
- *   2. Otherwise the staff member who sent the most messages, provided they
- *      cleared minMessagesToCredit.
- *   3. Otherwise nobody — a ticket where no staff said anything meaningful
- *      should not pay out.
- *
- * Note this is deliberately NOT "whoever closed it". Closing is one click and
- * would be the easiest number in the whole system to farm; doing the talking
- * is not.
+ * The rule itself lives in tickets.js and is shared with the native ticket
+ * system on purpose: two ticket paths that credit different people would be
+ * impossible to explain to the staff member who came up short.
  */
 function decideCredit(guildId, ticket) {
-  if (ticket.claimed_by && isTrackedStaff(guildId, ticket.claimed_by)) {
-    return [ticket.claimed_by];
-  }
-
-  const parts = db
-    .getParticipants(ticket.channel_id)
-    .filter((p) => isTrackedStaff(guildId, p.user_id))
-    .filter((p) => p.messages >= (TK()?.minMessagesToCredit ?? 3));
-
-  if (!parts.length) return [];
-  return TK()?.creditEveryone ? parts.map((p) => p.user_id) : [parts[0].user_id];
+  return nativeTickets.decideCredit(guildId, ticket, {
+    minMessagesToCredit: TK()?.minMessagesToCredit ?? 3,
+    creditEveryone: TK()?.creditEveryone ?? false,
+  });
 }
 
 function closeTicket(guildId, ticket) {

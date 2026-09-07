@@ -50,6 +50,8 @@ const {
 const config = require('../config');
 const tracking = require('./tracking');
 const ticketWatch = require('./ticketWatch');
+const tickets = require('./tickets');
+const ticketPanel = require('./ticketPanel');
 const gameChat = require('./gameChat');
 const trialScheduler = require('./trialScheduler');
 const startupChecks = require('./startupChecks');
@@ -78,6 +80,34 @@ function validateConfig() {
     const cats = config.ticketKing.categoryIds ?? [];
     if (!cats.length || cats.every(placeholder)) {
       problems.push('ticketKing.categoryIds has no real category ID — ticket work will not be tracked.');
+    }
+  }
+
+  if (config.tickets?.enabled) {
+    if (config.ticketKing?.enabled) {
+      problems.push(
+        'tickets.enabled and ticketKing.enabled are BOTH on — any category they share gets counted twice.'
+      );
+    }
+    if (!config.tickets.types?.length) {
+      problems.push('tickets.types is empty — the panel would have nothing to offer.');
+    }
+    if (!(config.tickets.staffRoleIds ?? []).length) {
+      problems.push(
+        'tickets.staffRoleIds is empty — nobody except the person who opened a ticket would be able to see it.'
+      );
+    }
+    const noCategory = (config.tickets.types ?? [])
+      .filter((t) => placeholder(t.categoryId))
+      .map((t) => t.key);
+    if (noCategory.length) {
+      problems.push(
+        `tickets.types missing a categoryId: ${noCategory.join(", ")} — their channels would be created loose at the top of the server.`
+      );
+    }
+    const keys = (config.tickets.types ?? []).map((t) => t.key);
+    if (new Set(keys).size !== keys.length) {
+      problems.push('tickets.types has duplicate keys — the dropdown would open the wrong type.');
     }
   }
 
@@ -125,7 +155,12 @@ console.log(`[commands] loaded ${client.commands.size}: ${[...client.commands.ke
 
 // ---- interactions ----
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  // Buttons, dropdowns and modals. Everything with a custom ID belongs to
+  // the ticket system today; handle() ignores anything that does not.
+  if (!interaction.isChatInputCommand()) {
+    await ticketPanel.handle(interaction);
+    return;
+  }
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
@@ -161,6 +196,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 tracking.register(client);
 ticketWatch.register(client);
+tickets.register(client);
 
 client.once(Events.ClientReady, (c) => {
   console.log(`[ready] logged in as ${c.user.tag}`);

@@ -158,6 +158,61 @@ if (gc.enabled) {
 }
 
 // ---- tickets ----
+const tickets = config.tickets ?? {};
+if (tickets.enabled) {
+  console.log(`\n${B}Tickets${X} ${D}(Staffbot's own)${X}`);
+
+  listLine('Ticket staff roles', tickets.staffRoleIds, {
+    hint: 'tickets.staffRoleIds — who can SEE and work every ticket. Empty means only the person who opened it can see it, which makes the whole thing useless.',
+  });
+  line('Transcript log channel', tickets.logChannelId, {
+    hint: 'tickets.logChannelId — closed tickets post their full transcript here. Without it, closing a ticket deletes the conversation for good.',
+  });
+  line('Escalation category', tickets.escalationCategoryId, {
+    req: false,
+    hint: 'Optional. /ticket escalate moves the channel here. Unset = escalate in place, ping only.',
+  });
+  line('Blacklist role', tickets.blacklistRoleId, {
+    req: false,
+    hint: 'Optional. Handed to blacklisted users so it is visible who is blocked. The block itself works either way.',
+  });
+
+  const types = tickets.types ?? [];
+  if (!types.length) {
+    problemsExtra.push('tickets.types is empty — the panel dropdown would have nothing in it');
+  }
+  for (const t of types) {
+    line(`  type: ${t.key}`, t.categoryId, {
+      hint: `Right-click the category these tickets should be created in > Copy ID, then set tickets.types[${t.key}].categoryId.`,
+    });
+    if ((t.questions ?? []).length > 5) {
+      problemsExtra.push(`tickets.types.${t.key} has ${t.questions.length} questions — Discord modals allow at most 5`);
+    }
+  }
+  const keys = types.map((t) => t.key);
+  if (new Set(keys).size !== keys.length) {
+    problemsExtra.push('tickets.types has duplicate keys — the dropdown would open the wrong type');
+  }
+
+  console.log(
+    `   ${D}limits: ${tickets.maxOpenPerUser ?? 1} open per person, ` +
+      `${tickets.cooldownSeconds ?? 0}s between opens${X}`
+  );
+  console.log(
+    `   ${D}on close: ` +
+      (tickets.deleteDelaySeconds == null
+        ? 'channel locked and kept'
+        : `channel deleted after ${tickets.deleteDelaySeconds}s`) +
+      `${X}`
+  );
+  console.log(
+    `   ${D}credit rule: claimer if there is one, else top talker with ${tickets.minMessagesToCredit ?? 3}+ messages${X}`
+  );
+  console.log(`   ${D}post the dropdown with /ticketpanel once the above is filled in${X}`);
+} else {
+  console.log(`\n${B}Tickets${X}\n   ${Y}–${X} Staffbot's own ticket system is off (tickets.enabled)`);
+}
+
 const tk = config.ticketKing ?? {};
 if (tk.enabled) {
   console.log(`\n${B}Ticket King${X}`);
@@ -192,8 +247,16 @@ if (tk.enabled) {
   console.log(
     `   ${D}credit rule: claimer if detected, else top talker with ${tk.minMessagesToCredit ?? 3}+ messages${X}`
   );
+  if (tickets.enabled) {
+    problemsExtra.push(
+      'ticketKing.enabled and tickets.enabled are BOTH on — any category the two share is counted twice'
+    );
+  }
 } else {
-  console.log(`\n${B}Ticket King${X}\n   ${Y}–${X} integration disabled — ticket metrics will always read 0`);
+  console.log(
+    `\n${B}Ticket King${X}\n   ${Y}–${X} legacy watcher off` +
+      (tickets.enabled ? ` ${D}(Staffbot runs its own tickets instead)${X}` : `\n       ${D}and so is the native system, so ticket metrics will always read 0${X}`)
+  );
 }
 
 // ---- who can run what ----

@@ -1,9 +1,9 @@
 # Staffbot
 
-Staff ranks, trial evaluation, ongoing standing reviews, and Ticket King integration for a Discord server.
+Staff ranks, trial evaluation, ongoing standing reviews, and a built-in ticket system for a Discord server.
 
 - **`/promote` and `/demote`** move people along your ladder, with guardrails so nobody can touch someone at or above their own rank.
-- **Ticket King integration** — Staffbot watches your Ticket King category and works out who actually handled each ticket.
+- **Tickets** — a dropdown panel members open tickets from, with claiming, escalation, transcripts and a blacklist. Because Staffbot runs them itself, ticket work is measured rather than guessed at.
 - **`/trial start`** puts someone on the clock. The bot then measures what they actually do.
 - At the end it posts a **scorecard** — objective numbers plus senior-staff vouches — flagged **READY / BORDERLINE / BELOW BAR**.
 - **Above the trial**, every ranked staff member gets a rolling **standing** review against their own rank's targets, with a hold bar and a promote bar. See [the standing system](#above-the-trial--the-standing-system).
@@ -73,7 +73,7 @@ You need:
 - your public staff-movements channel
 - your in-game chat bridge channel
 - your staff channel IDs
-- the **category** Ticket King creates its ticket channels in
+- the categories your tickets get created in, and a private channel for ticket transcripts
 
 The bot refuses to start if anything important is still a placeholder, and tells you exactly which line.
 
@@ -125,6 +125,16 @@ To run it 24/7:
 | `/leaderboard [days:]` | Head Mod+ | Staff ranked by score, with what the bottom is missing |
 | `/digest [preview:]` | Head Mod+ | Post the weekly digest now |
 | `/sync` | Head Mod+ | Register existing role-holders into the database |
+| `/ticketpanel [channel:]` | Head Mod+ | Post the dropdown members open tickets from |
+| `/ticket claim` \| `unclaim` | Ticket staff | Take a ticket, or put it back up for grabs |
+| `/ticket transfer user:` | Ticket staff | Hand it over — the credit goes with it |
+| `/ticket escalate [reason:]` | Ticket staff | Pull in the rank above you |
+| `/ticket add user:` \| `remove user:` | Ticket staff | Let someone into the ticket, or out of it |
+| `/ticket priority level:` | Ticket staff | low / normal / high / urgent |
+| `/ticket rename name:` | Ticket staff | Rename the channel, keeping the number |
+| `/ticket close [reason:]` | Ticket staff | Transcript to the log, then the channel goes |
+| `/ticket blacklist user: [reason:]` | Head Mod+ | Block someone from opening tickets |
+| `/ticket unblacklist user:` \| `blacklisted` | Head Mod+ | Unblock them / list everyone blocked |
 
 ### Where rank changes go
 
@@ -464,11 +474,93 @@ Other guards:
 
 ---
 
-## Tickets — Ticket King does the tickets
+## Tickets
 
-Staffbot has no ticket system of its own. **Ticket King** runs your tickets; Staffbot just watches so that ticket work still counts toward a trial's score.
+Staffbot runs your tickets itself. It creates the channel, handles the Claim button and closes the thing, which is what makes the ticket half of a trial score trustworthy — nothing here is inferred from another bot's embeds.
 
-It works by watching the **category** Ticket King creates its channels in — not by reading its embeds:
+### How it works for a member
+
+1. They pick an option from the **dropdown panel** you posted with `/ticketpanel`.
+2. If that type asks questions, they get a **form** first, so staff open the channel already knowing the problem.
+3. A private channel appears — `#ticket-0042` — visible to them and your ticket staff, with the answers pinned at the top.
+
+### How it works for staff
+
+| Action | What it does |
+|---|---|
+| **Claim** button, or `/ticket claim` | Puts your name on it. This is what decides the credit. |
+| **Close** button, or `/ticket close` | Confirm, transcript to the log channel, then the channel goes. |
+| `/ticket transfer user:` | Hands it to someone else, and moves the credit with it. |
+| `/ticket escalate` | Pings the rank **above you** and moves it to the escalation category. |
+| `/ticket add user:` / `remove` | Pull in a witness or a second pair of eyes. |
+| `/ticket priority level:` | low / normal / high / urgent. High and urgent get a coloured prefix on the channel name so they sort to the top. |
+| `/ticket rename name:` | Rename the channel, keeping the ticket number. |
+
+Anyone holding a rank role, or a role in `tickets.staffRoleIds`, can do all of the above.
+
+### Who gets the credit
+
+1. **The claimer.** They put their name on it.
+2. Otherwise **the staff member who sent the most messages**, provided they cleared `minMessagesToCredit` (default 3).
+3. Otherwise **nobody**.
+
+Note this is deliberately not "whoever closed it". Closing is one click and would be the easiest number in the whole system to farm. Doing the talking is not.
+
+`creditEveryone: true` credits every staff member over the threshold instead of just the top one — reasonable if your team genuinely tag-teams tickets, inflationary if they don't.
+
+### Transcripts
+
+When a ticket closes, the whole conversation is rendered into a single self-contained HTML file and posted to `tickets.logChannelId`, alongside who opened it, who claimed it, who got the credit and how long it was open. Then the channel is deleted after `deleteDelaySeconds`.
+
+Set `deleteDelaySeconds: null` to lock and keep the channel instead of deleting it.
+
+> Set `logChannelId` before you go live. Without it, closing a ticket deletes the conversation permanently — which is exactly the wrong outcome for an appeal or a player report. `/ticketpanel` warns you if it is missing.
+
+### Stopping the panel being spammed
+
+- `maxOpenPerUser` (default 1) — how many tickets one person may have open at once.
+- `cooldownSeconds` (default 300) — how long they must wait between opening tickets.
+- `/ticket blacklist user: reason:` — blocks someone entirely. They are shown your reason when they try.
+
+Blacklisting also hands them the `tickets.blacklistRoleId` role, purely so it is obvious in the member list who is blocked. **The database is the real gate** — stripping that role by hand does not let them open tickets again. `/ticket blacklisted` lists everyone currently blocked.
+
+### Setup
+
+```js
+tickets: {
+  enabled: true,
+  staffRoleIds: ['ROLE_THAT_HANDLES_TICKETS'],
+  logChannelId: 'PRIVATE_TRANSCRIPT_CHANNEL',
+  escalationCategoryId: null,      // optional
+  blacklistRoleId: null,           // optional
+  maxOpenPerUser: 1,
+  cooldownSeconds: 300,
+  deleteDelaySeconds: 15,          // null = lock and keep the channel
+  types: [
+    { key: 'support', label: 'General Support', categoryId: 'CATEGORY_ID', questions: [...] },
+  ],
+}
+```
+
+Each entry in `types` becomes one option in the dropdown, with its own category, its own roles to ping, and up to **five** form questions (Discord's limit on a form). Then, in a channel members can see:
+
+```
+/ticketpanel             ← posts the dropdown
+```
+
+The panel message holds no state, so it is disposable: change your types, post a new one, delete the old one. Run `npm run check` first — it lists every ticket ID still missing.
+
+The bot needs **Manage Channels** to create and delete ticket channels. If you invited it before this version existed, re-run `npm run invite` and use the new link; re-inviting a bot that is already in your server just tops up its permissions.
+
+### If the bot is offline
+
+It runs on a PC, so it misses events whenever that PC sleeps. Nobody can open a ticket while it is down — the dropdown does nothing. On startup it settles any ticket whose channel disappeared while it was away, crediting from the message counts it did record.
+
+---
+
+## Still using Ticket King?
+
+The old watcher is still in the box. It does not run your tickets — it watches the **category** another bot creates channels in and works out who handled what from who did the talking:
 
 | What happens | What Staffbot records |
 |---|---|
@@ -477,53 +569,13 @@ It works by watching the **category** Ticket King creates its channels in — no
 | Every staff message | A participation count |
 | The channel disappears | Ticket closed — credit whoever did the work |
 
-Because it only depends on channels appearing and disappearing, a Ticket King update that rewords their embeds cannot break it.
+To use it instead of the native system, set `ticketKing.enabled: true` **and `tickets.enabled: false`**. Leaving both on double-counts any category they share, and the bot says so on startup.
 
-### Who gets the credit
+Its one fragile part is claim detection: `claimPattern` is a regex matched against Ticket King's own messages, and the first capture group that looks like a user ID is taken as the claimer. If it never matches, nothing breaks — credit falls back to the message count. That fragility is the reason the native system exists.
 
-1. **The claimer**, if Ticket King's `/claim` was detected. They owned it.
-2. Otherwise **the staff member who sent the most messages**, provided they cleared `minMessagesToCredit` (default 3).
-3. Otherwise **nobody**.
+Staffbot must also be able to see inside those channels: add its role to Ticket King's **support roles**, or grant **View Channel** and **Read Message History** on the category. If it cannot see them, ticket metrics stay at zero and nothing tells you why.
 
-Note this is deliberately not "whoever closed it". Closing is one click and would be the easiest number in the whole system to farm. Doing the talking is not.
-
-`creditEveryone: true` credits every staff member over the threshold instead of just the top one — reasonable if your team genuinely tag-teams tickets, inflationary if they don't.
-
-### Setup
-
-```js
-ticketKing: {
-  enabled: true,
-  categoryIds: ['YOUR_TICKET_CATEGORY_ID'],
-  botUserId: '710034409214181396',
-  claimPattern: '...',
-  minMessagesToCredit: 3,
-  creditEveryone: false,
-}
-```
-
-**Staffbot must be able to see inside ticket channels.** This is the one thing that needs checking in your server, because Ticket King's claim modes change channel permissions:
-
-- Best: add Staffbot's role to Ticket King's **support roles** in their dashboard. That guarantees visibility under all four claim modes.
-- Or: grant Staffbot's role **View Channel** and **Read Message History** on the ticket category, then open a test ticket, claim it, and confirm Staffbot can still see it.
-
-If Staffbot can't see the channels, ticket metrics stay at zero and nothing tells you why — so test it once with a throwaway ticket before your first real trial.
-
-### Claim detection
-
-`claimPattern` is a regex matched against Ticket King's own messages in a ticket. The first capture group that looks like a user ID is taken as the claimer. The shipped pattern covers the usual phrasings ("X has claimed this ticket", "Claimed by X").
-
-If it never matches, **nothing breaks** — credit quietly falls back to the message count. On startup Staffbot logs how many claims it has detected, so you'll know within a day whether it's working:
-
-```
-[tickets] watching 1 category · 3 tickets currently open · claims detected so far: 12
-```
-
-If that number stays at 0 while your team is definitely claiming, send me a screenshot of a Ticket King claim message and I'll rewrite the pattern.
-
-### If the bot is offline
-
-It runs on a PC, so it will miss events whenever that PC sleeps. On startup it reconciles: tickets that opened while it was away get registered, and tickets whose channel has since vanished get closed and credited from the message counts it did record. Long outages will under-count, which is worth knowing when reading a scorecard that spans one.
+Both kinds of ticket live in the same table and count toward the same metrics, so switching over loses no history.
 
 ---
 
@@ -618,7 +670,13 @@ A bot that auto-promotes will eventually promote whoever reverse-engineers the f
 
 **"Discord refused the role change: Missing Permissions"** — the bot's role is below your rank roles. Drag it up.
 
-**Ticket metrics stay at 0** — Staffbot can't see inside the ticket channels. Add its role to Ticket King's support roles, or grant it View Channel + Read Message History on the ticket category. Check `ticketKing.categoryIds` points at the CATEGORY, not a channel.
+**The dropdown does nothing when someone picks an option** — the bot is not running, or it cannot create the channel. Check the console. The usual cause is a missing **Manage Channels** permission (re-run `npm run invite` and use the new link) or a `categoryId` that is not a category.
+
+**Ticket metrics stay at 0** — with the native system, check `tickets.enabled` is true and that you have actually closed a ticket; credit is paid at close, not at open. Nobody is credited if no staff member claimed it *and* nobody cleared `minMessagesToCredit`. Still on Ticket King? Staffbot can't see inside the channels — add its role to Ticket King's support roles, or grant View Channel + Read Message History on the category, and check `ticketKing.categoryIds` points at the CATEGORY, not a channel.
+
+**Closing a ticket loses the conversation** — `tickets.logChannelId` is not set, so there is nowhere to put the transcript. Set it, or set `deleteDelaySeconds: null` to keep the channels instead.
+
+**`/ticket priority` says it could not rename the channel** — Discord limits channel renames to roughly twice per 10 minutes. The priority itself is saved; the name catches up next time.
 
 **Mod actions always 0** — the bot needs **View Audit Log**. It also only sees actions taken while it's online, which matters when you're hosting on a PC.
 

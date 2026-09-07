@@ -1452,12 +1452,264 @@ check('the hold bar sits below the promote bar', () => {
   );
 });
 
+
+// ---------------------------------------------------------------
+console.log("\nTickets (Staffbot's own)");
+
+const tickets = require('../src/tickets');
+const ticketPanel = require('../src/ticketPanel');
+const transcript = require('../src/transcript');
+
+const TCFG = config.tickets;
+const TG = 'ticketguild';
+
+// ---- config shape ----
+
+check('ticket type keys are unique', () => {
+  const keys = (TCFG.types ?? []).map((t) => t.key);
+  assert.strictEqual(new Set(keys).size, keys.length, 'a duplicate key opens the wrong type');
+});
+
+check('no ticket type asks more than 5 questions', () => {
+  for (const t of TCFG.types ?? []) {
+    assert.ok(
+      (t.questions ?? []).length <= 5,
+      t.key + ' has ' + t.questions.length + ' questions; Discord modals allow 5'
+    );
+  }
+});
+
+check('question ids are unique within a type', () => {
+  // They become the modal's custom_ids. Two the same and Discord rejects the
+  // whole modal, so the dropdown would look broken with nothing in the log.
+  for (const t of TCFG.types ?? []) {
+    const ids = (t.questions ?? []).map((q) => q.id);
+    assert.strictEqual(new Set(ids).size, ids.length, t.key + ' repeats a question id');
+  }
+});
+
+check('the panel fits inside Discord limits', () => {
+  const built = ticketPanel.buildPanel();
+  const menu = built.components[0].toJSON().components[0];
+  assert.ok(menu.options.length <= 25, 'a select menu takes at most 25 options');
+  assert.strictEqual(menu.custom_id, 'ticket:open');
+  for (const o of menu.options) {
+    assert.ok(o.label.length <= 100, 'option label too long: ' + o.label);
+    assert.ok(!o.description || o.description.length <= 100, 'option description too long');
+  }
+});
+
+check('every type builds a modal Discord would accept', () => {
+  for (const t of TCFG.types ?? []) {
+    if (!(t.questions ?? []).length) continue;
+    const json = ticketPanel.modalFor(t).toJSON();
+    assert.ok(json.components.length <= 5, t.key + ' produced too many rows');
+    assert.ok(json.title.length <= 45, t.key + ' modal title too long');
+    for (const row of json.components) {
+      assert.ok(row.components[0].label.length <= 45, t.key + ' input label too long');
+    }
+  }
+});
+
+check('the two ticket systems are not both switched on', () => {
+  assert.ok(
+    !(TCFG.enabled && config.ticketKing.enabled),
+    'a category they share would be counted twice'
+  );
+});
+
+check('every command file has a unique name', () => {
+  // /ticket and /ticketpanel were the first two commands added in years; a
+  // collision here silently overwrites one of them in the Collection.
+  const dir2 = path.join(__dirname, '..', 'src', 'commands');
+  const names = fs
+    .readdirSync(dir2)
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => require(path.join(dir2, f)).data.name);
+  assert.strictEqual(new Set(names).size, names.length, 'two commands share a name');
+});
+
+// ---- naming ----
+
+check('channel names are padded and carry the priority', () => {
+  assert.strictEqual(tickets.channelNameFor(42, 'normal'), 'ticket-0042');
+  assert.strictEqual(tickets.channelNameFor(7, 'urgent'), '🔴-ticket-0007');
+  assert.ok(tickets.channelNameFor(1, 'urgent').length <= 100, 'Discord caps channel names at 100');
+});
+
+// ---- numbering ----
+
+check('ticket numbers are never reused', () => {
+  const n1 = db.nextTicketNumber(TG);
+  db.createTicket({
+    guildId: TG, channelId: 'tc-1', channelName: 'ticket-0001',
+    openerId: 'member-a', number: n1, typeKey: 'support', subject: 'help',
+  });
+  db.closeTicket('tc-1', null);
+  assert.strictEqual(
+    db.nextTicketNumber(TG), n1 + 1,
+    'closing a ticket must not free its number — two transcripts would claim to be the same ticket'
+  );
+});
+
+// ---- the open gate ----
+
+check('a fresh member is allowed to open a ticket', () => {
+  assert.strictEqual(tickets.openBlockedReason({ id: TG }, 'nobody-yet'), null);
+});
+
+check('the open limit is enforced', () => {
+  const n = db.nextTicketNumber(TG);
+  db.createTicket({
+    guildId: TG, channelId: 'tc-open', openerId: 'member-b', number: n,
+    typeKey: 'support', channelName: 'ticket-open',
+  });
+  const saved = TCFG.cooldownSeconds;
+  TCFG.cooldownSeconds = 0; // isolate the limit from the cooldown
+  const reason = tickets.openBlockedReason({ id: TG }, 'member-b');
+  TCFG.cooldownSeconds = saved;
+  assert.ok(reason && /already have/.test(reason), 'expected the limit to bite, got: ' + reason);
+});
+
+check('the cooldown is enforced separately from the limit', () => {
+  const saved = TCFG.maxOpenPerUser;
+  TCFG.maxOpenPerUser = 0; // 0 = no limit, so only the cooldown can block
+  const reason = tickets.openBlockedReason({ id: TG }, 'member-b');
+  TCFG.maxOpenPerUser = saved;
+  assert.ok(reason && /recently/.test(reason), 'expected the cooldown to bite, got: ' + reason);
+});
+
+check('a blacklisted member is turned away before anything is created', () => {
+  db.addTicketBlacklist(TG, 'member-c', 'kept opening joke tickets', 'admin-1');
+  const reason = tickets.openBlockedReason({ id: TG }, 'member-c');
+  assert.ok(reason && /blocked/.test(reason), reason);
+  assert.ok(/joke tickets/.test(reason), 'the reason should be shown to them');
+});
+
+check('lifting a blacklist lets them back in', () => {
+  assert.strictEqual(db.removeTicketBlacklist(TG, 'member-c'), true);
+  assert.strictEqual(db.isTicketBlacklisted(TG, 'member-c'), false);
+  assert.strictEqual(db.removeTicketBlacklist(TG, 'member-c'), false, 'a second lift is a no-op');
+});
+
+check('the blacklist survives the role being stripped by hand', () => {
+  // The role is only a label. Nothing in the gate consults it.
+  db.addTicketBlacklist(TG, 'member-d', null, 'admin-1');
+  assert.ok(tickets.openBlockedReason({ id: TG }, 'member-d'));
+  db.removeTicketBlacklist(TG, 'member-d');
+});
+
+// ---- credit ----
+
+check('both ticket systems credit the same person', () => {
+  // The native path and the legacy watcher share one implementation. If that
+  // ever forks, a staff member gets a different answer depending on which
+  // door their ticket came through, and nobody can explain why.
+  const n = db.nextTicketNumber(TG);
+  db.createTicket({ guildId: TG, channelId: 'tc-credit', openerId: 'member-e', number: n, typeKey: 'support' });
+  db.setRank(TG, 'staff-x', R.ranks[0].key, 'actor');
+  for (let i = 0; i < 4; i++) db.bumpParticipant('tc-credit', 'staff-x');
+  const t = db.getTicket('tc-credit');
+  assert.deepStrictEqual(tickets.decideCredit(TG, t, { minMessagesToCredit: 3 }), ['staff-x']);
+  assert.deepStrictEqual(ticketWatch.decideCredit(TG, t), ['staff-x']);
+});
+
+check('the claimer beats the top talker', () => {
+  db.setRank(TG, 'staff-y', R.ranks[0].key, 'actor');
+  db.setClaim('tc-credit', 'staff-y');
+  const t = db.getTicket('tc-credit');
+  assert.deepStrictEqual(tickets.decideCredit(TG, t, { minMessagesToCredit: 3 }), ['staff-y']);
+});
+
+check('unclaiming hands it back to the top talker', () => {
+  db.clearClaim('tc-credit');
+  const t = db.getTicket('tc-credit');
+  assert.strictEqual(t.claimed_by, null);
+  assert.deepStrictEqual(tickets.decideCredit(TG, t, { minMessagesToCredit: 3 }), ['staff-x']);
+});
+
+check('a channel deleted by hand still pays whoever worked it', () => {
+  const credited = tickets.settleDeleted(TG, db.getTicket('tc-credit'));
+  assert.deepStrictEqual(credited, ['staff-x']);
+  const t = db.getTicket('tc-credit');
+  assert.strictEqual(t.state, 'closed');
+  assert.strictEqual(t.credited_to, 'staff-x');
+  assert.strictEqual(db.ticketStatsFor(TG, 'staff-x', 0, Date.now() + 1000).handled, 1);
+});
+
+check('native tickets feed the same metric a trial is scored on', () => {
+  const m = db.getMetrics(TG, 'staff-x', 0, Date.now());
+  assert.ok((m.ticketsHandled ?? 0) >= 1, 'ticketsHandled is 25% of the trial score');
+});
+
+// ---- who may work a ticket ----
+
+check('anyone on the rank ladder counts as ticket staff', () => {
+  assert.strictEqual(tickets.isTicketStaff(fakeMember([R.ranks[0].roleId], 's1')), true);
+});
+
+check('a plain member does not', () => {
+  assert.strictEqual(tickets.isTicketStaff(fakeMember([], 'm1')), false);
+});
+
+check('a configured ticket staff role counts even off the ladder', () => {
+  const saved = TCFG.staffRoleIds;
+  TCFG.staffRoleIds = ['helper-role'];
+  assert.strictEqual(tickets.isTicketStaff(fakeMember(['helper-role'], 'h1')), true);
+  TCFG.staffRoleIds = saved;
+});
+
+// ---- escalation ----
+
+check('escalation targets the rank above you', () => {
+  const junior = fakeMember([R.ranks[0].roleId], 'j1');
+  assert.strictEqual(tickets.escalationTarget(junior).key, R.ranks[1].key);
+});
+
+check('escalating from the top rank does not fall off the ladder', () => {
+  const boss = fakeMember([R.ranks[R.ranks.length - 1].roleId], 'b1');
+  assert.strictEqual(tickets.escalationTarget(boss).key, R.ranks[R.ranks.length - 1].key);
+});
+
+// ---- transcripts ----
+
+check('a transcript escapes anything that looks like markup', () => {
+  const html = transcript.renderHtml(
+    { name: 'ticket-0001', id: 'c1' },
+    { number: 1, opened_at: Date.now(), priority: 'normal', subject: 'x' },
+    [{
+      content: '<script>alert(1)</script> & "quoted"',
+      author: { id: '1', username: 'sneaky', bot: false },
+      createdTimestamp: Date.now(),
+      embeds: [],
+      attachments: new Map(),
+    }],
+    false
+  );
+  assert.ok(!html.includes('<script>alert'), 'raw script tag made it into the transcript');
+  assert.ok(html.includes('&lt;script&gt;'), 'the text itself should still be readable');
+  assert.ok(html.includes('&amp;') && html.includes('&quot;'));
+});
+
+check('a transcript records the facts a reviewer needs', () => {
+  const html = transcript.renderHtml(
+    { name: 'ticket-0009', id: 'c9' },
+    { number: 9, opened_at: Date.now(), priority: 'urgent', claimed_by: 'staff-x', credited_to: 'staff-x', type_key: 'report' },
+    [],
+    false
+  );
+  for (const needle of ['staff-x', 'report', 'urgent', 'Ticket #9']) {
+    assert.ok(html.includes(needle), 'transcript is missing ' + needle);
+  }
+});
+
 // ---------------------------------------------------------------
 // cleanup
-for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets', 'adjustments']) {
-  db.db.exec(`DELETE FROM ${t} WHERE guild_id='${G}'`);
+for (const t of ['metrics', 'vouches', 'notes', 'audit', 'staff', 'tickets', 'adjustments', 'ticket_blacklist']) {
+  for (const g of [G, TG]) db.db.exec(`DELETE FROM ${t} WHERE guild_id='${g}'`);
 }
 db.db.exec("DELETE FROM ticket_participants WHERE channel_id LIKE 'chan-%'");
+db.db.exec("DELETE FROM ticket_participants WHERE channel_id LIKE 'tc-%'");
 db.db.exec(`DELETE FROM game_links WHERE guild_id='${G}'`);
 db.db.exec(`DELETE FROM presence WHERE guild_id='${G}'`);
 db.db.exec(`DELETE FROM loa WHERE guild_id='${G}'`);

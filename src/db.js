@@ -178,10 +178,22 @@ db.exec(`
     messages   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (channel_id, user_id)
   );
+
+  -- People barred from opening tickets. This row is the actual gate. The
+  -- role in config.tickets.blacklistRoleId only exists so it is visible at
+  -- a glance who is blocked — stripping that role by hand does not let
+  -- them back in, which is the whole reason the ban lives here instead.
+  CREATE TABLE IF NOT EXISTS ticket_blacklist (
+    guild_id   TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    reason     TEXT,
+    author_id  TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+  );
 `);
 
 
-// The built-in ticket system was replaced by the Ticket King watcher.
 // CREATE TABLE IF NOT EXISTS will not add columns to a table that already
 // exists, so top up anything missing rather than making people delete
 // their database (which would take their whole staff history with it).
@@ -199,6 +211,24 @@ ensureColumns('tickets', {
   credited_to: 'TEXT',
   last_activity_at: 'INTEGER NOT NULL DEFAULT 0',
 });
+
+// Staffbot's own ticket system knows more than the watcher ever could:
+// the type, the subject, who closed it and why, because it was the one
+// holding the pen. Rows written by the old watcher keep source='ticketking'
+// and NULL for the rest, so both kinds sit in one table and one set of
+// stats — nobody loses their history by switching over.
+ensureColumns('tickets', {
+  number: 'INTEGER',
+  type_key: 'TEXT',
+  subject: 'TEXT',
+  priority: "TEXT NOT NULL DEFAULT 'normal'",
+  escalated_at: 'INTEGER',
+  escalated_by: 'TEXT',
+  closed_by: 'TEXT',
+  close_reason: 'TEXT',
+  source: "TEXT NOT NULL DEFAULT 'ticketking'",
+});
+db.exec('CREATE INDEX IF NOT EXISTS idx_tickets_opener ON tickets (guild_id, opener_id, opened_at)');
 
 // Adjustments gained expiry and were renamed void -> revoke. CREATE TABLE IF
 // NOT EXISTS silently does nothing to an existing table, so without this the
@@ -334,6 +364,56 @@ const stmts = {
   `),
   claimsSeen: db.prepare(
     `SELECT COUNT(*) AS n FROM tickets WHERE guild_id = ? AND claimed_by IS NOT NULL`
+  ),
+
+  // ---- tickets (Staffbot's own) ----
+  // MAX() and not COUNT(): closed tickets stay in the table, so counting
+  // rows would hand out a number that is already taken the moment one is
+  // deleted — and two tickets sharing a number means two transcripts
+  // claiming to be the same ticket.
+  maxTicketNumber: db.prepare(
+    'SELECT MAX(number) AS n FROM tickets WHERE guild_id = ?'
+  ),
+  insertTicket: db.prepare(`
+    INSERT INTO tickets
+      (guild_id, channel_id, channel_name, opener_id, opened_at, last_activity_at,
+       number, type_key, subject, priority, source)
+    VALUES
+      (@guild_id, @channel_id, @channel_name, @opener_id, @opened_at, @opened_at,
+       @number, @type_key, @subject, @priority, 'native')
+  `),
+  countOpenBy: db.prepare(
+    `SELECT COUNT(*) AS n FROM tickets WHERE guild_id = ? AND opener_id = ? AND state = 'open'`
+  ),
+  lastOpenedBy: db.prepare(
+    'SELECT MAX(opened_at) AS at FROM tickets WHERE guild_id = ? AND opener_id = ?'
+  ),
+  clearClaim: db.prepare(
+    'UPDATE tickets SET claimed_by = NULL, claimed_at = NULL WHERE channel_id = ?'
+  ),
+  setPriority: db.prepare('UPDATE tickets SET priority = ? WHERE channel_id = ?'),
+  setChannelName: db.prepare('UPDATE tickets SET channel_name = ? WHERE channel_id = ?'),
+  markEscalated: db.prepare(
+    'UPDATE tickets SET escalated_at = ?, escalated_by = ? WHERE channel_id = ?'
+  ),
+  setCloseMeta: db.prepare(
+    'UPDATE tickets SET closed_by = ?, close_reason = ? WHERE channel_id = ?'
+  ),
+  listOpenNative: db.prepare(
+    `SELECT * FROM tickets WHERE guild_id = ? AND state = 'open' AND source = 'native'
+     ORDER BY opened_at ASC`
+  ),
+
+  addBlacklist: db.prepare(`
+    INSERT INTO ticket_blacklist (guild_id, user_id, reason, author_id, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (guild_id, user_id) DO UPDATE SET
+      reason = excluded.reason, author_id = excluded.author_id, created_at = excluded.created_at
+  `),
+  removeBlacklist: db.prepare('DELETE FROM ticket_blacklist WHERE guild_id = ? AND user_id = ?'),
+  getBlacklist: db.prepare('SELECT * FROM ticket_blacklist WHERE guild_id = ? AND user_id = ?'),
+  listBlacklist: db.prepare(
+    'SELECT * FROM ticket_blacklist WHERE guild_id = ? ORDER BY created_at DESC'
   ),
 
   // ---- leave of absence ----
@@ -589,6 +669,48 @@ module.exports = {
 
   /** Have we ever successfully detected a Ticket King claim? */
   claimsSeen: (guildId) => stmts.claimsSeen.get(guildId).n,
+
+  // ---------------- tickets (Staffbot's own) ----------------
+
+  /**
+   * Create a ticket row and hand the whole thing back. Deliberately NOT
+   * idempotent, unlike noteTicketOpened: we are the ones creating the
+   * channel here, so a duplicate channel_id is a bug worth throwing over,
+   * not a second sighting of something a foreign bot made.
+   */
+  createTicket({ guildId, channelId, channelName, openerId, number, typeKey, subject, priority }) {
+    stmts.insertTicket.run({
+      guild_id: guildId,
+      channel_id: channelId,
+      channel_name: channelName ?? null,
+      opener_id: openerId ?? null,
+      opened_at: now(),
+      number: number ?? null,
+      type_key: typeKey ?? null,
+      subject: subject ?? null,
+      priority: priority ?? 'normal',
+    });
+    return stmts.getTicketByChannel.get(channelId);
+  },
+
+  nextTicketNumber: (guildId) => (stmts.maxTicketNumber.get(guildId).n ?? 0) + 1,
+  countOpenTicketsBy: (g, u) => stmts.countOpenBy.get(g, u).n,
+  lastTicketOpenedAt: (g, u) => stmts.lastOpenedBy.get(g, u).at ?? 0,
+  listOpenNativeTickets: (g) => stmts.listOpenNative.all(g),
+
+  clearClaim: (channelId) => stmts.clearClaim.run(channelId),
+  setTicketPriority: (channelId, priority) => stmts.setPriority.run(priority, channelId),
+  setTicketChannelName: (channelId, name) => stmts.setChannelName.run(name, channelId),
+  markEscalated: (channelId, byUserId) => stmts.markEscalated.run(now(), byUserId, channelId),
+  setCloseMeta: (channelId, closedBy, reason) =>
+    stmts.setCloseMeta.run(closedBy ?? null, reason ?? null, channelId),
+
+  addTicketBlacklist: (g, u, reason, author) =>
+    stmts.addBlacklist.run(g, u, reason ?? null, author, now()),
+  removeTicketBlacklist: (g, u) => stmts.removeBlacklist.run(g, u).changes > 0,
+  ticketBlacklistEntry: (g, u) => stmts.getBlacklist.get(g, u) ?? null,
+  isTicketBlacklisted: (g, u) => Boolean(stmts.getBlacklist.get(g, u)),
+  listTicketBlacklist: (g) => stmts.listBlacklist.all(g),
 
   // ---------------- leave of absence ----------------
   startLoa(guildId, userId, days, reason, by) {

@@ -217,16 +217,16 @@ module.exports = {
   },
 
   // ----------------------------------------------------------
-  // 4. TICKET KING INTEGRATION
+  // 4. TICKET KING INTEGRATION  (legacy — off by default)
   // ----------------------------------------------------------
-  // Staffbot does NOT run tickets — Ticket King does. This section just
-  // teaches Staffbot to watch Ticket King's channels so ticket work still
-  // counts toward a trial's score.
+  // Staffbot now runs its own tickets; see section 4b below. This older
+  // section makes it watch a THIRD-PARTY bot's ticket category instead,
+  // inferring who handled what from who did the talking.
   //
-  // It works by watching the ticket CATEGORY, not by parsing Ticket King's
-  // messages, so it keeps working if they change their embed wording.
+  // Leave this off unless you are still running Ticket King. Turning both
+  // on at once double-counts any category they share.
   ticketKing: {
-    enabled: true,
+    enabled: false,
 
     // The category (or categories) Ticket King creates ticket channels in.
     // Find these in your Ticket King dashboard under each panel's settings,
@@ -257,7 +257,114 @@ module.exports = {
   },
 
   // ----------------------------------------------------------
-  // 4b. WEEKLY DIGEST
+  // 4b. TICKETS — Staffbot's own ticket system
+  // ----------------------------------------------------------
+  // Staffbot opens the channel, handles the claim button and closes the
+  // ticket itself. Because it owns the whole lifecycle, ticketsHandled and
+  // responseSpeed become measured facts rather than guesses about someone
+  // else's bot.
+  //
+  // Minimum setup: fill in staffRoleIds, logChannelId, and a categoryId on
+  // each type you want to keep. Then run /ticketpanel in a public channel.
+  tickets: {
+    enabled: true,
+
+    // Roles that can see and work EVERY ticket. Usually your rank roles, or
+    // just the Staff Team role. Anyone without one of these cannot claim,
+    // close, or even see a ticket they did not open.
+    staffRoleIds: [],
+
+    // Where transcripts are posted when a ticket closes. Make this private.
+    // The transcript contains the entire conversation.
+    logChannelId: null,
+
+    // Optional. /ticket escalate moves the channel here so senior staff have
+    // one place to look. Leave null to escalate in place (ping only).
+    escalationCategoryId: null,
+
+    // Role handed to anyone who is ticket-blacklisted, purely so it is
+    // obvious at a glance who is blocked. The database is the real gate —
+    // removing the role by hand does NOT let them open tickets again.
+    // Leave null to skip the role and use the database alone.
+    blacklistRoleId: null,
+
+    // Anti-spam. Both are per person; set either to 0 to turn it off.
+    maxOpenPerUser: 1,
+    cooldownSeconds: 300,
+
+    // After closing, the channel is deleted this many seconds later. The
+    // delay gives staff a moment to grab anything they still need; the
+    // transcript is already safely in the log channel by then.
+    // Set to null to lock and keep the channel instead of deleting it.
+    deleteDelaySeconds: 15,
+
+    // ticket-0001, ticket-0002, ... Numbers never repeat, even after deletes.
+    numberPadding: 4,
+
+    // Credit rules, used when a ticket closes without ever being claimed.
+    // Same reasoning as Ticket King's: doing the talking earns the credit,
+    // clicking Close does not.
+    minMessagesToCredit: 3,
+    creditEveryone: false,
+
+    // The message /ticketpanel posts.
+    panel: {
+      title: 'Support',
+      description:
+        'Need a hand? Pick the option that fits below and a private channel will open for you.',
+      placeholder: 'Choose a ticket type…',
+    },
+
+    // Every entry becomes one option in the panel dropdown.
+    //
+    //   key         internal id, must be unique and never reused
+    //   categoryId  where this type's channels are created (REQUIRED)
+    //   pingRoleIds pinged once when the ticket opens
+    //   questions   0-5 fields shown as a form before the channel is made.
+    //               Omit or leave empty to open with no questions asked.
+    types: [
+      {
+        key: 'support',
+        label: 'General Support',
+        emoji: '🎫',
+        description: 'Questions, help, anything else',
+        categoryId: null,
+        pingRoleIds: [],
+        questions: [
+          { id: 'subject', label: 'Short summary', style: 'short', required: true, max: 100 },
+          { id: 'details', label: 'What do you need help with?', style: 'paragraph', required: true, max: 1000 },
+        ],
+      },
+      {
+        key: 'report',
+        label: 'Report a Player',
+        emoji: '🚨',
+        description: 'Rule breaking, cheating, harassment',
+        categoryId: null,
+        pingRoleIds: [],
+        questions: [
+          { id: 'subject', label: 'Who are you reporting?', style: 'short', required: true, max: 100 },
+          { id: 'details', label: 'What happened?', style: 'paragraph', required: true, max: 1000 },
+          { id: 'evidence', label: 'Evidence (links to screenshots/clips)', style: 'paragraph', required: false, max: 500 },
+        ],
+      },
+      {
+        key: 'appeal',
+        label: 'Ban Appeal',
+        emoji: '⚖️',
+        description: 'Appeal a punishment on your account',
+        categoryId: null,
+        pingRoleIds: [],
+        questions: [
+          { id: 'subject', label: 'Your username', style: 'short', required: true, max: 100 },
+          { id: 'details', label: 'Why should this be overturned?', style: 'paragraph', required: true, max: 1000 },
+        ],
+      },
+    ],
+  },
+
+  // ----------------------------------------------------------
+  // 4c. WEEKLY DIGEST
   // ----------------------------------------------------------
   // Posted to the reviews channel. Everything in it is something the bot
   // already knows and nobody is asking it — trials about to expire, staff who

@@ -6,8 +6,9 @@ const { REST, Routes } = require('discord.js');
 const { DISCORD_TOKEN, CLIENT_ID, GUILD_ID } = process.env;
 
 // Everything the bot needs: view/send/embed/attach/history, manage messages,
-// manage roles (promotions), view audit log (mod actions).
-const PERMS = '268561536';
+// manage channels (creating and deleting ticket channels), manage roles
+// (promotions and the ticket blacklist role), view audit log (mod actions).
+const PERMS = '268561552';
 const inviteUrl = (id) =>
   `https://discord.com/oauth2/authorize?client_id=${id}&permissions=${PERMS}&scope=bot%20applications.commands`;
 

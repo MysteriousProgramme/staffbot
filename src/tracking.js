@@ -2,6 +2,7 @@ const { Events, AuditLogEvent } = require('discord.js');
 const config = require('../config');
 const db = require('./db');
 const ticketWatch = require('./ticketWatch');
+const tickets = require('./tickets');
 const gameChat = require('./gameChat');
 const observe = require('./observe');
 
@@ -36,9 +37,10 @@ function register(client) {
 
       if (message.author.bot) return;
 
-      // Ticket King channels are measured by ticket metrics (claims,
-      // response time, who did the talking), not by raw message count —
-      // otherwise a chatty ticket would pay out twice.
+      // Ticket channels are measured by ticket metrics (claims, response
+      // time, who did the talking), not by raw message count — otherwise a
+      // chatty ticket would pay out twice for the same hour of work.
+      if (tickets.handleMessage(message)) return;
       if (ticketWatch.handleMessage(message)) return;
 
       if (!isTrackedStaff(message.guildId, message.author.id)) return;
