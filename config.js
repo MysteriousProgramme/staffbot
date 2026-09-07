@@ -344,7 +344,8 @@ const config = {
         {
           name: '⏱️ How long will it take?',
           value:
-            'Usually under an hour while staff are online. Appeals and partnerships can take a day.',
+            'Usually under an hour while staff are online. Appeals and partnerships can take a day, ' +
+            'and it is one appeal per punishment.',
           inline: false,
         },
         // {
@@ -384,7 +385,7 @@ const config = {
         key: 'support',
         label: 'Server Issue or Question',
         emoji: '🛠️',
-        description: 'Bugs, lag, lost items, anything else',
+        description: 'Bugs, lag, lost items',
         color: 0x5865f2,
         categoryId: '1510607597030609047',
         pingRoleIds: ['1531486709873639454'],
@@ -416,7 +417,7 @@ const config = {
         key: 'staffreport',
         label: 'Report a Staff Member',
         emoji: '🛡️',
-        description: 'Goes to the owners only — no staff can see it',
+        description: 'Owners only — staff cannot see',
         color: 0xa855f7,
         categoryId: '1510607597030609047',
         staffRoleIds: [],
@@ -438,7 +439,7 @@ const config = {
         key: 'appeal',
         label: 'Punishment Appeal',
         emoji: '⚖️',
-        description: 'Appeal a ban, mute or kick — one per punishment',
+        description: 'Bans, mutes and kicks',
         color: 0xfbbf24,
         categoryId: '1510607597030609047',
         staffRoleIds: ['1513855451555696740'],
@@ -454,7 +455,7 @@ const config = {
         key: 'partnership',
         label: 'Partnership',
         emoji: '🤝',
-        description: 'Server partnerships and collaborations',
+        description: 'Collaborations and promos',
         color: 0x22c55e,
         categoryId: '1510607597030609047',
         staffRoleIds: [],
