@@ -352,6 +352,13 @@ const config = {
     // Every entry becomes one option in the panel dropdown.
     //
     //   key         internal id, must be unique and never reused
+    //   emoji       shown in the dropdown and beside the label. A SERVER
+    //               emoji works too — paste it as <:name:id>, or <a:name:id>
+    //               when animated. Type \:name: in Discord and send it to
+    //               get that text. The bot must be in a server that has it.
+    //               Note Discord does not render custom emoji in an embed
+    //               title or footer, so keep them out of panel.title and
+    //               panel.footer; npm run check warns if you do not.
     //   categoryId  where this type's channels are created (REQUIRED)
     //   pingRoleIds pinged once when the ticket opens
     //   color       accent colour of the ticket's opening embed. Omit to

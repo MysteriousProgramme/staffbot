@@ -60,6 +60,18 @@ function isTicketStaff(member) {
   return (T().staffRoleIds ?? []).some((id) => member.roles.cache.has(id));
 }
 
+/**
+ * Is this a server emoji rather than a plain unicode one?
+ *
+ * It matters because Discord renders them in only some places. Message text,
+ * embed descriptions and embed field names resolve `<:name:id>` into the
+ * picture. Embed TITLES, author lines and footers do not — they print the raw
+ * `<:name:id>` text at the reader, which looks like a bug and is why the
+ * opening embed keeps custom emoji out of its title.
+ */
+const CUSTOM_EMOJI = /^<a?:\w{2,32}:\d{17,20}>$/;
+const isCustomEmoji = (e) => CUSTOM_EMOJI.test(String(e ?? ''));
+
 const pad = (n) => String(n).padStart(T().numberPadding ?? 4, '0');
 
 function channelNameFor(number, priority) {
@@ -256,12 +268,17 @@ const UNCLAIMED_FOOTER = 'Unclaimed · staff, use the buttons below';
 function openingEmbed(ticket, type, opener, answers) {
   const priority = PRIORITIES[ticket.priority] ?? PRIORITIES.normal;
 
+  // A server emoji in the title would print as literal <:name:id>, so it goes
+  // to the front of the description instead, where Discord does resolve it.
+  const emoji = type?.emoji ?? '🎫';
+  const custom = isCustomEmoji(emoji);
+
   const embed = new EmbedBuilder()
     .setColor(type?.color ?? priority.color)
     .setAuthor({ name: nameOf(opener), iconURL: avatarOf(opener) })
-    .setTitle(`${type?.emoji ?? '🎫'}  ${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
+    .setTitle(`${custom ? '' : emoji + '  '}${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
     .setDescription(
-      'Thanks for reaching out — a staff member will pick this up as soon as one is free.\n' +
+      `${custom ? emoji + ' ' : ''}Thanks for reaching out — a staff member will pick this up as soon as one is free.\n` +
         '-# Screenshots, usernames, timestamps: the more that is in here, the faster this goes.'
     )
     .setFooter({ text: UNCLAIMED_FOOTER })
@@ -780,6 +797,7 @@ module.exports = {
   typeByKey,
   ticketCategoryIds,
   isTicketStaff,
+  isCustomEmoji,
   overwritesFor,
   audienceFor,
   channelNameFor,

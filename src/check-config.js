@@ -161,6 +161,7 @@ if (gc.enabled) {
 const tickets = config.tickets ?? {};
 if (tickets.enabled) {
   console.log(`\n${B}Tickets${X} ${D}(Staffbot's own)${X}`);
+  const p = tickets.panel ?? {};
 
   listLine('Ticket staff roles', tickets.staffRoleIds, {
     hint: 'tickets.staffRoleIds — who can SEE and work every ticket. Empty means only the person who opened it can see it, which makes the whole thing useless.',
@@ -189,6 +190,19 @@ if (tickets.enabled) {
       problemsExtra.push(`tickets.types.${t.key} has ${t.questions.length} questions — Discord modals allow at most 5`);
     }
   }
+  // Custom emoji resolve in message text, embed descriptions and field
+  // names. They do NOT resolve in an embed title or footer, where they
+  // print as raw <:name:id> at whoever is reading. Nothing errors, so it
+  // has to be caught here or not at all.
+  const customEmoji = /<a?:\w{2,32}:\d{17,20}>/;
+  for (const [field, value] of [['title', p.title], ['footer', p.footer]]) {
+    if (value && customEmoji.test(String(value))) {
+      problemsExtra.push(
+        `tickets.panel.${field} contains a custom emoji, which Discord does not render there — it will show as raw <:name:id>. Move it to panel.description or a panel.fields entry.`
+      );
+    }
+  }
+
   const keys = types.map((t) => t.key);
   if (new Set(keys).size !== keys.length) {
     problemsExtra.push('tickets.types has duplicate keys — the dropdown would open the wrong type');

@@ -1587,6 +1587,26 @@ check('the embed never exceeds the 25-field limit Discord imposes', () => {
   assert.ok((e.fields ?? []).length <= 25, `${e.fields.length} fields would be rejected outright`);
 });
 
+// ---- custom emoji ----
+
+check('a server emoji is recognised, in both static and animated form', () => {
+  assert.strictEqual(tickets.isCustomEmoji('<:tempest:1510607597030609047>'), true);
+  assert.strictEqual(tickets.isCustomEmoji('<a:spin:1510607597030609048>'), true);
+  assert.strictEqual(tickets.isCustomEmoji('🎫'), false);
+  assert.strictEqual(tickets.isCustomEmoji(null), false);
+  assert.strictEqual(tickets.isCustomEmoji('<:missingid:>'), false);
+});
+
+check('a server emoji reaches the dropdown as a structured emoji', () => {
+  const saved = TCFG.types;
+  TCFG.types = [{ ...saved[0], emoji: '<a:spin:1510607597030609048>' }];
+  const menu = ticketPanel.buildPanel().components[0].toJSON().components[0];
+  TCFG.types = saved;
+
+  assert.strictEqual(menu.options[0].emoji.id, '1510607597030609048');
+  assert.strictEqual(menu.options[0].emoji.animated, true, 'animated flag was dropped');
+});
+
 // ---- naming ----
 
 check('channel names are padded and carry the priority', () => {
