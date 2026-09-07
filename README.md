@@ -560,6 +560,26 @@ Staffbot runs your tickets itself. It creates the channel, handles the Claim but
 
 Anyone holding a rank role, or a role in `tickets.staffRoleIds`, can do all of the above.
 
+### Keeping a type away from the people it is about
+
+By default every role in `tickets.staffRoleIds` can read every ticket. That is wrong in one case in particular: a report about a staff member would be readable by the staff member it is about.
+
+Give a type its own `staffRoleIds` and it **replaces** the global list rather than adding to it:
+
+```js
+{
+  key: 'staffreport',
+  label: 'Report a Staff Member',
+  staffRoleIds: [],                  // no rank role sees this at all
+  pingRoleIds: [FOUNDER, OWNER],     // only these can read it
+  ...
+}
+```
+
+`pingRoleIds` always gets access on top, so an empty `staffRoleIds` means "only the roles I ping". Omit the field entirely and the type behaves as it always did.
+
+Do not reach for separate categories to solve this. A category organises channels; it does not restrict them. Visibility comes from these two lists and nothing else.
+
 ### Who gets the credit
 
 1. **The claimer.** They put their name on it.
