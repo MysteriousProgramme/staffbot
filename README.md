@@ -3,6 +3,7 @@
 Staff ranks, trial evaluation, ongoing standing reviews, and a built-in ticket system for a Discord server.
 
 - **`/promote` and `/demote`** move people along your ladder, with guardrails so nobody can touch someone at or above their own rank.
+- **A dashboard** — a local website for running all of this from a browser instead of typing slash commands. See [The dashboard](#the-dashboard).
 - **Tickets** — a dropdown panel members open tickets from, with claiming, escalation, transcripts and a blacklist. Because Staffbot runs them itself, ticket work is measured rather than guessed at.
 - **`/trial start`** puts someone on the clock. The bot then measures what they actually do.
 - At the end it posts a **scorecard** — objective numbers plus senior-staff vouches — flagged **READY / BORDERLINE / BELOW BAR**.
@@ -183,6 +184,67 @@ The reason **never** reaches the public channel, whatever you switch on. One fie
 Note the hire line doesn't say "trial". That it's a probation with a pass/fail at the end is between the person and the staff team; announcing it invites members to start scoring them too.
 
 Set `announcements.channelId` to `null` to turn the whole thing off.
+
+---
+
+## The dashboard
+
+Everything above is also a website. Run the bot, open the address it prints, paste the token:
+
+```
+[web] dashboard: http://127.0.0.1:8787
+[web] token: 3nR9x_KfQ2sVbT8pLmWzYd4Ah
+```
+
+Four tabs:
+
+- **Overview** — open tickets, what is unclaimed, trials about to end, who is on leave.
+- **Staff** — the roster, and for anyone on it: their score, every metric as a bar against its target (weakest first), vouches, notes, rank history. Promote, demote, start or end a trial, vouch, log a note.
+- **Tickets** — every open ticket with its age, priority and claimer. Claim, close, re-prioritise. Manage the blacklist. Post the panel.
+- **Settings** — the config, as a form.
+
+It is the same code underneath, not a second implementation: the score on the website is `computeScore` and the promote button is `applyRank`, so the page and the embeds cannot disagree.
+
+### Settings, without SSH
+
+The dashboard never rewrites `config.js`. It writes `data/config.local.json`, which is merged over the top on load:
+
+```
+config.js  <  data/config.local.json
+```
+
+`data/` is gitignored, so **`git pull` stops fighting your settings** — the committed file stays the defaults, your changes live beside the database, and an override is undone by removing it rather than by hunting through 700 lines. Role and channel fields are dropdowns of what is actually in your server, so there is no ID to copy.
+
+Not everything is editable from the page. Scoring weights, permission ranks and the chat-bridge regexes fail quietly and subtly when they are wrong, and a stray keystroke in a form should not be able to switch off half the scoring system. Those stay in `config.js`, where changing them is deliberate.
+
+Most changes take effect immediately. Some are read once at startup, so there is a **Restart bot** button — under systemd it comes straight back.
+
+### Reaching it from EC2
+
+It binds to `127.0.0.1`, which means the machine it runs on and nowhere else. From your PC, forward the port over SSH:
+
+```bash
+ssh -i your-key.pem -L 8787:127.0.0.1:8787 ec2-user@YOUR-INSTANCE-IP
+```
+
+Leave that open and browse to `http://localhost:8787`. Nothing is exposed to the internet and the security group is untouched.
+
+**Do not set `web.host` to `0.0.0.0`.** That publishes a page that can promote staff and read message samples onto the network, with one token in front of it. The bot prints a warning if you do. Use the tunnel.
+
+### Security
+
+| | |
+|---|---|
+| Binding | `127.0.0.1` — loopback only |
+| Token | `WEB_TOKEN` in `.env`, or generated each boot and printed |
+| Sessions | HttpOnly, SameSite=Strict cookie, 12 hours by default |
+| Brute force | 8 attempts, then locked out for 5 minutes |
+| Writes | Rejected without a header a cross-site form cannot set |
+| Page | Strict CSP, no inline scripts, everything rendered as text not HTML |
+| Read-only | `web.allowWrites: false` removes every button and refuses every write |
+| Off | `web.enabled: false` |
+
+Actions are attributed to `USER_ID` from `.env` in the audit trail and the staff log, so `/staffstats` shows a person rather than "the bot".
 
 ---
 
@@ -681,6 +743,12 @@ A bot that auto-promotes will eventually promote whoever reverse-engineers the f
 **Mod actions always 0** — the bot needs **View Audit Log**. It also only sees actions taken while it's online, which matters when you're hosting on a PC.
 
 **Message counts stay 0** — Message Content Intent is off in the developer portal.
+
+**The dashboard will not load** — check the bot console for `[web] dashboard:`. If the port is taken it says so; change `web.port`. On a server, remember it only listens on loopback, so you need the SSH tunnel above.
+
+**The dashboard says "Not signed in" every time you restart** — sessions live in memory, so a restart signs you out. Set `WEB_TOKEN` in `.env` and the token at least stops changing.
+
+**A setting you changed on the website went back** — a value that is also set in `config.js` is only overridden while the entry exists in `data/config.local.json`. Deleting that file resets everything to the committed defaults.
 
 **Commands don't appear** — run `npm run deploy` (or `setup.bat`) and check `GUILD_ID`. Guild commands appear instantly; if nothing shows, the ID is wrong.
 

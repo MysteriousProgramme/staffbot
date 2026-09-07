@@ -7,9 +7,10 @@
   "scripts": {
     "start": "node src/index.js",
     "deploy": "node src/deploy-commands.js",
-    "test": "node test/smoke.js",
+    "test": "node test/smoke.js && node test/web.js",
     "check": "node src/check-config.js",
-    "invite": "node src/invite.js"
+    "invite": "node src/invite.js",
+    "test:web": "node test/web.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

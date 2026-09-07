@@ -91,6 +91,7 @@ Expect to end on something like:
 | `journalctl -u staffbot -f` | Live logs — your `start.bat` window equivalent |
 | `journalctl -u staffbot --since "1 hour ago"` | What happened earlier |
 | `sudo systemctl restart staffbot` | After editing `config.js` |
+| `ssh -i key.pem -L 8787:127.0.0.1:8787 ec2-user@IP` | Tunnel the dashboard to your PC |
 | `sudo systemctl stop staffbot` | Take it offline |
 
 ### Updating to a new version
@@ -117,9 +118,27 @@ Or if you edited it on GitHub in the browser:
 cd ~/staffbot && git pull && sudo systemctl restart staffbot
 ```
 
+### Opening the dashboard
+
+The bot serves a control panel, but only on `127.0.0.1` — the instance itself. To reach it, forward the port over SSH from your PC:
+
+```bash
+ssh -i your-key.pem -L 8787:127.0.0.1:8787 ec2-user@YOUR-INSTANCE-IP
+```
+
+Leave that terminal open and browse to **http://localhost:8787**. The token is in the logs:
+
+```bash
+journalctl -u staffbot | grep "\[web\] token"
+```
+
+Set `WEB_TOKEN` in `.env` if you would rather it stayed the same across restarts.
+
+This adds nothing to the security group and exposes nothing publicly — the traffic goes down the SSH connection you already have. Do not be tempted to set `web.host` to `0.0.0.0` and open port 8787 instead; that puts a page which can promote staff on the open internet.
+
 ### Back up the database
 
-The database is the only irreplaceable thing on the box. Set a daily backup:
+The database is the only irreplaceable thing on the box (`data/` also holds `config.local.json`, which the backup script does not cover — it is small, so copy it down once after you have set things up). Set a daily backup:
 
 ```bash
 crontab -e

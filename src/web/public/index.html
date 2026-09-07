@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staffbot</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<div id="login" class="gate">
+  <form class="card gate-card" id="login-form">
+    <h1>Staffbot</h1>
+    <p class="dim">Paste the token from the bot console.</p>
+    <input type="password" id="token" placeholder="Access token" autocomplete="current-password" spellcheck="false">
+    <button type="submit" class="primary">Sign in</button>
+    <p class="err" id="login-err" hidden></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="brand">Staffbot</div>
+    <nav id="tabs">
+      <button data-tab="overview" class="on">Overview</button>
+      <button data-tab="staff">Staff</button>
+      <button data-tab="tickets">Tickets</button>
+      <button data-tab="config">Settings</button>
+    </nav>
+    <div class="status" id="botstatus"></div>
+  </header>
+
+  <main>
+    <section id="tab-overview" class="tab on">
+      <div class="tiles" id="tiles"></div>
+      <div class="cols">
+        <div class="card">
+          <h2>Waiting for a claim</h2>
+          <div id="ov-unclaimed"></div>
+        </div>
+        <div class="card">
+          <h2>Trials ending soon</h2>
+          <div id="ov-trials"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-staff" class="tab">
+      <div class="split">
+        <div class="card list">
+          <h2>Roster</h2>
+          <div id="staff-list"></div>
+        </div>
+        <div class="card detail" id="staff-detail">
+          <p class="dim pad">Pick someone from the roster.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-tickets" class="tab">
+      <div class="card">
+        <h2>Open tickets</h2>
+        <div id="ticket-list"></div>
+      </div>
+      <div class="card">
+        <h2>Blacklist</h2>
+        <div id="blacklist"></div>
+        <div class="row gap" id="bl-form">
+          <input id="bl-id" placeholder="Discord user ID" spellcheck="false">
+          <input id="bl-reason" placeholder="Reason (they are shown this)">
+          <button id="bl-add">Block</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Ticket panel</h2>
+        <p class="dim">Post the dropdown members open tickets from. Delete the old panel afterwards.</p>
+        <div class="row gap">
+          <select id="panel-channel"></select>
+          <button id="panel-post">Post panel</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-config" class="tab">
+      <div class="card">
+        <h2>Settings</h2>
+        <p class="dim" id="config-note"></p>
+        <div id="config-form"></div>
+        <div class="row gap sticky">
+          <button id="config-save" class="primary">Save</button>
+          <button id="config-restart">Restart bot</button>
+          <span class="dim" id="config-status"></span>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -57,6 +57,7 @@ const trialScheduler = require('./trialScheduler');
 const startupChecks = require('./startupChecks');
 const observe = require('./observe');
 const digest = require('./digest');
+const web = require('./web/server');
 
 // ---- sanity check the config before we waste time connecting ----
 function validateConfig() {
@@ -205,6 +206,7 @@ client.once(Events.ClientReady, (c) => {
   gameChat.report(c);
   observe.startPurge();
   digest.start(c);
+  web.start(c);
   startupChecks.run(c).catch((e) => console.error('[startup]', e));
 });
 

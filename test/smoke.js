@@ -1564,10 +1564,11 @@ check('the open limit is enforced', () => {
     guildId: TG, channelId: 'tc-open', openerId: 'member-b', number: n,
     typeKey: 'support', channelName: 'ticket-open',
   });
-  const saved = TCFG.cooldownSeconds;
+  const saved = { cd: TCFG.cooldownSeconds, max: TCFG.maxOpenPerUser };
   TCFG.cooldownSeconds = 0; // isolate the limit from the cooldown
+  TCFG.maxOpenPerUser = 1; // pin it: config.local.json could have raised this
   const reason = tickets.openBlockedReason({ id: TG }, 'member-b');
-  TCFG.cooldownSeconds = saved;
+  Object.assign(TCFG, { cooldownSeconds: saved.cd, maxOpenPerUser: saved.max });
   assert.ok(reason && /already have/.test(reason), 'expected the limit to bite, got: ' + reason);
 });
 

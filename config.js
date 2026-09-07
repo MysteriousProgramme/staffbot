@@ -10,7 +10,7 @@
  *  targets are as low as they are.
  */
 
-module.exports = {
+const config = {
   // ----------------------------------------------------------
   // 1. THE RANK LADDER
   // ----------------------------------------------------------
@@ -748,4 +748,86 @@ module.exports = {
     belowBar: 0xef4444,
     ticket: 0x818cf8,
   },
+
+  // ----------------------------------------------------------
+  // 9. THE DASHBOARD
+  // ----------------------------------------------------------
+  // A small website for running all of this from a browser instead of typing
+  // slash commands. It is served by the bot itself, so it holds the live
+  // Discord connection and can genuinely promote someone or close a ticket.
+  //
+  // It binds to 127.0.0.1 — the loopback address — which means it is
+  // reachable from the machine it runs on and nowhere else. On a server you
+  // reach it through an SSH tunnel. Read the warning on `host` before you
+  // change that.
+  web: {
+    enabled: true,
+    port: 8787,
+
+    // 127.0.0.1 = this machine only. Anything else publishes a control panel
+    // for your staff team onto the network, and the token below becomes the
+    // only thing standing between the internet and your /promote command.
+    // Use an SSH tunnel instead — DEPLOY-EC2.md has the one-liner.
+    host: '127.0.0.1',
+
+    // Set WEB_TOKEN in .env to pin it. Left unset, a fresh one is generated
+    // on every boot and printed to the console.
+    // token comes from process.env.WEB_TOKEN
+
+    // Let the dashboard change things, not just show them. Turn this off and
+    // it becomes a read-only window: every button disappears and every write
+    // endpoint refuses.
+    allowWrites: true,
+
+    // How many minutes a browser session lasts before it asks for the token
+    // again.
+    sessionMinutes: 720,
+  },
 };
+
+// ----------------------------------------------------------
+//  LOCAL OVERRIDES  (data/config.local.json)
+// ----------------------------------------------------------
+// Anything the dashboard saves is written there, not here, and merged over the
+// top on load.
+//
+// This file stays the committed defaults, so `git pull` never fights your
+// local settings again — data/ is gitignored, and an override is undone by
+// deleting its line rather than by hunting through 700 lines of config.
+//
+// Precedence: this file < data/config.local.json.
+{
+  const path = require('path');
+  const fs = require('fs');
+  const dir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const file = path.join(dir, 'config.local.json');
+
+  const isPlain = (v) => v && typeof v === 'object' && !Array.isArray(v);
+
+  // Arrays are replaced wholesale, not merged element by element: a role list
+  // with one entry removed has to end up with one entry removed.
+  const merge = (base, over) => {
+    for (const [k, v] of Object.entries(over ?? {})) {
+      if (isPlain(v) && isPlain(base[k])) merge(base[k], v);
+      else base[k] = v;
+    }
+    return base;
+  };
+
+  if (fs.existsSync(file)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      merge(config, raw);
+      const n = Object.keys(raw).length;
+      console.log(`[config] applied ${n} override section${n === 1 ? '' : 's'} from config.local.json`);
+    } catch (e) {
+      // Never take the bot down over a bad overrides file — the committed
+      // config on its own is always a working configuration.
+      console.error(`[config] ignoring config.local.json — ${e.message}`);
+    }
+  }
+
+  config.overridesPath = file;
+}
+
+module.exports = config;

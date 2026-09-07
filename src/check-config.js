@@ -315,6 +315,44 @@ if (tk.enabled) {
   }
 }
 
+// ---- dashboard ----
+const w = config.web ?? {};
+console.log(`\n${B}Dashboard${X}`);
+if (w.enabled === false) {
+  console.log(`   ${Y}–${X} turned off (web.enabled)`);
+} else {
+  const loopback = !w.host || w.host === '127.0.0.1' || w.host === 'localhost';
+  console.log(`   ${G}✓${X} ${'Address'.padEnd(34)} ${D}http://${w.host ?? '127.0.0.1'}:${w.port ?? 8787}${X}`);
+
+  const tokenPinned = Boolean(process.env.WEB_TOKEN);
+  console.log(
+    `   ${tokenPinned ? G + '✓' : Y + '–'}${X} ${'Sign-in token'.padEnd(34)}` +
+      (tokenPinned
+        ? `${D}pinned via WEB_TOKEN${X}`
+        : `${Y}generated each boot${X}\n       ${D}set WEB_TOKEN in .env to keep one across restarts${X}`)
+  );
+
+  const actsAs = process.env.USER_ID;
+  console.log(
+    `   ${actsAs ? G + '✓' : Y + '–'}${X} ${'Acts as (USER_ID)'.padEnd(34)}` +
+      (actsAs
+        ? `${D}${actsAs}${X}`
+        : `${Y}falls back to the server owner${X}\n       ${D}set USER_ID in .env so the audit trail names you${X}`)
+  );
+
+  if (w.allowWrites === false) {
+    console.log(`   ${D}read-only — every button is hidden and every write refuses${X}`);
+  }
+  if (loopback) {
+    console.log(`   ${D}loopback only — on a server, reach it with an SSH tunnel${X}`);
+  } else {
+    problemsExtra.push(
+      `web.host is "${w.host}", not loopback — a page that can promote staff would be ` +
+        'reachable from the network. Set it back to 127.0.0.1 and use an SSH tunnel.'
+    );
+  }
+}
+
 // ---- sanity ----
 console.log(`\n${B}Sanity checks${X}`);
 const problems = [...problemsExtra];
