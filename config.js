@@ -298,8 +298,24 @@ const config = {
     // Set to null to lock and keep the channel instead of deleting it.
     deleteDelaySeconds: 15,
 
-    // ticket-0001, ticket-0002, ... Numbers never repeat, even after deletes.
+    // How ticket channels are named. Tokens:
+    //   {type}     the type key, e.g. report
+    //   {number}   zero-padded to numberPadding, e.g. 0042
+    //   {user}     the opener, lowercased and stripped to a-z 0-9 -
+    //   {priority} low / normal / high / urgent
+    //
+    // Discord caps a channel name at 100 characters and allows nothing but
+    // lowercase letters, digits and dashes, so every token is cleaned before
+    // it goes in. A token that resolves to nothing is dropped rather than
+    // leaving a double dash.
+    nameFormat: '{type}-{number}-{user}',
+
+    // Zero-padding for {number}. Numbers never repeat, even after deletes.
     numberPadding: 4,
+
+    // Put a coloured dot in front of high and urgent tickets so they sort
+    // to the top of the category. Set false for plain names.
+    priorityPrefix: true,
 
     // Credit rules, used when a ticket closes without ever being claimed.
     // Same reasoning as Ticket King's: doing the talking earns the credit,

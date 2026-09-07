@@ -1684,10 +1684,71 @@ check('a server emoji reaches the dropdown as a structured emoji', () => {
 
 // ---- naming ----
 
-check('channel names are padded and carry the priority', () => {
-  assert.strictEqual(tickets.channelNameFor(42, 'normal'), 'ticket-0042');
-  assert.strictEqual(tickets.channelNameFor(7, 'urgent'), '🔴-ticket-0007');
-  assert.ok(tickets.channelNameFor(1, 'urgent').length <= 100, 'Discord caps channel names at 100');
+check('a channel is named type-number-user', () => {
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 42, typeKey: 'report', username: 'Wafflvedd' }),
+    'report-0042-wafflvedd'
+  );
+});
+
+check('high and urgent are marked so they sort to the top', () => {
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 7, typeKey: 'appeal', username: 'Steve', priority: 'urgent' }),
+    '🔴-appeal-0007-steve'
+  );
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 7, typeKey: 'appeal', username: 'Steve', priority: 'low' }),
+    'appeal-0007-steve'
+  );
+});
+
+check('changing priority swaps the marker without rebuilding the name', () => {
+  // It has to work this way: by the time priority changes we no longer know
+  // what the opener was called.
+  const named = tickets.channelNameFor({ number: 3, typeKey: 'support', username: 'Asker' });
+  const urgent = tickets.withPriorityPrefix(named, 'urgent');
+  assert.strictEqual(urgent, '🔴-support-0003-asker');
+  assert.strictEqual(tickets.withPriorityPrefix(urgent, 'normal'), 'support-0003-asker');
+  assert.strictEqual(tickets.withPriorityPrefix(urgent, 'high'), '🟠-support-0003-asker');
+});
+
+check('a username Discord would reject is cleaned up', () => {
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 1, typeKey: 'support', username: 'Zac.The_Great!!' }),
+    'support-0001-zac-the-great'
+  );
+});
+
+check('a name made entirely of characters that cannot survive still works', () => {
+  const name = tickets.channelNameFor({ number: 9, typeKey: 'support', username: '日本語' });
+  assert.strictEqual(name, 'support-0009', 'an empty token should not leave a dangling dash');
+});
+
+check('a very long username cannot push the name past the 100-char cap', () => {
+  const name = tickets.channelNameFor({
+    number: 1, typeKey: 'partnership', username: 'x'.repeat(200), priority: 'urgent',
+  });
+  assert.ok(name.length <= 100, name.length + ' characters');
+});
+
+check('the format is configurable', () => {
+  const saved = TCFG.nameFormat;
+  TCFG.nameFormat = '{user}-{number}';
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 5, typeKey: 'report', username: 'Mika' }),
+    'mika-0005'
+  );
+  TCFG.nameFormat = saved;
+});
+
+check('the priority marker can be turned off', () => {
+  const saved = TCFG.priorityPrefix;
+  TCFG.priorityPrefix = false;
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 2, typeKey: 'report', username: 'Mika', priority: 'urgent' }),
+    'report-0002-mika'
+  );
+  TCFG.priorityPrefix = saved;
 });
 
 // ---- numbering ----

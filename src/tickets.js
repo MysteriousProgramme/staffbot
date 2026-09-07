@@ -100,9 +100,51 @@ function claimReleaseBlocked(member, ticket) {
 
 const pad = (n) => String(n).padStart(T().numberPadding ?? 4, '0');
 
-function channelNameFor(number, priority) {
+/**
+ * Anything → something Discord will accept in a channel name.
+ *
+ * Channel names are lowercase, and everything outside a-z 0-9 - collapses to a
+ * dash. Display names in particular are full of things that do not survive
+ * that, so a name made entirely of them can legitimately come back empty and
+ * the caller has to cope.
+ */
+function slug(value, max = 24) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, max)
+    .replace(/-+$/g, '');
+}
+
+/**
+ * The priority marker lives at the FRONT so urgent tickets sort to the top of
+ * the category. Kept separate from the name itself, so changing priority later
+ * only has to swap this and never has to rebuild the rest — which matters
+ * because by then we no longer know what the opener was called.
+ */
+function withPriorityPrefix(name, priority) {
+  const bare = String(name ?? '').replace(/^[\u{1F534}\u{1F7E0}\u{1F535}\u{26AA}]-/u, '');
   const p = PRIORITIES[priority] ?? PRIORITIES.normal;
-  return `${p.prefix}ticket-${pad(number)}`;
+  const prefix = T().priorityPrefix === false ? '' : p.prefix;
+  return `${prefix}${bare}`.slice(0, 100);
+}
+
+/** Builds a fresh channel name from config.tickets.nameFormat. */
+function channelNameFor({ number, priority = 'normal', typeKey, username } = {}) {
+  const format = T().nameFormat ?? '{type}-{number}-{user}';
+
+  const body =
+    format
+      .replace(/\{type\}/g, slug(typeKey, 16))
+      .replace(/\{number\}/g, pad(number))
+      .replace(/\{user\}/g, slug(username, 24))
+      .replace(/\{priority\}/g, slug(priority, 8))
+      // A token that resolved to nothing leaves a double dash behind.
+      .replace(/-{2,}/g, '-')
+      .replace(/^-+|-+$/g, '') || `ticket-${pad(number)}`;
+
+  return withPriorityPrefix(body, priority);
 }
 
 // ---------------------------------------------------------------
@@ -385,7 +427,12 @@ function ticketButtons(claimedBy) {
  */
 async function createTicket({ guild, opener, type, answers = {} }) {
   const number = db.nextTicketNumber(guild.id);
-  const name = channelNameFor(number, 'normal');
+  const name = channelNameFor({
+    number,
+    priority: 'normal',
+    typeKey: type?.key,
+    username: opener.username ?? opener.tag,
+  });
 
   // Passed straight through rather than checked against the cache first: a
   // categoryId that is wrong should fail loudly here, not quietly create the
@@ -597,7 +644,7 @@ async function removeUser(channel, member) {
 async function setPriority(channel, ticket, priority) {
   db.setTicketPriority(channel.id, priority);
 
-  const name = channelNameFor(ticket.number, priority);
+  const name = withPriorityPrefix(ticket.channel_name ?? channel.name, priority);
   let renamed = true;
   try {
     await channel.setName(name, `Priority set to ${priority}`);
@@ -623,8 +670,7 @@ async function rename(channel, ticket, rawName) {
     .slice(0, 60);
   if (!clean) throw new Error('That name has no usable characters in it.');
 
-  const p = PRIORITIES[ticket.priority] ?? PRIORITIES.normal;
-  const name = `${p.prefix}${pad(ticket.number)}-${clean}`.slice(0, 100);
+  const name = withPriorityPrefix(`${pad(ticket.number)}-${clean}`, ticket.priority);
 
   await channel.setName(name, 'Ticket renamed');
   db.setTicketChannelName(channel.id, name);
@@ -870,6 +916,8 @@ module.exports = {
   overwritesFor,
   audienceFor,
   channelNameFor,
+  withPriorityPrefix,
+  slug,
   pad,
   openBlockedReason,
   createTicket,

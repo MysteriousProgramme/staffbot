@@ -544,7 +544,9 @@ Staffbot runs your tickets itself. It creates the channel, handles the Claim but
 
 1. They pick an option from the **dropdown panel** you posted with `/ticketpanel`.
 2. If that type asks questions, they get a **form** first, so staff open the channel already knowing the problem.
-3. A private channel appears — `#ticket-0042` — visible to them and your ticket staff, with the answers pinned at the top.
+3. A private channel appears — `#report-0042-wafflvedd` — visible to them and your ticket staff, with the answers pinned at the top.
+
+Channel names come from `tickets.nameFormat`, which defaults to `{type}-{number}-{user}`. The tokens are `{type}`, `{number}`, `{user}` and `{priority}`; everything is lowercased and stripped to what Discord accepts, and a token that resolves to nothing is dropped rather than leaving a dangling dash. High and urgent tickets get a coloured dot in front so they sort to the top of the category — turn that off with `tickets.priorityPrefix: false`.
 
 ### How it works for staff
 
