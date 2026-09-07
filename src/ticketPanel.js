@@ -30,21 +30,57 @@ const ephemeral = (content) => ({ content, flags: MessageFlags.Ephemeral });
 // The panel
 // ---------------------------------------------------------------
 
-function buildPanel() {
+/**
+ * Resolves 'server' to the guild's own icon or banner, so a panel looks like
+ * it belongs to the server without anybody hosting an image somewhere.
+ */
+function resolveImage(value, guild, kind) {
+  if (!value) return null;
+  if (value !== 'server') return value;
+  if (!guild) return null;
+  return kind === 'banner'
+    ? (guild.bannerURL?.({ size: 1024 }) ?? null)
+    : (guild.iconURL?.({ size: 256 }) ?? null);
+}
+
+/**
+ * The option list, rendered as one block rather than one embed field each.
+ *
+ * Fields stack into boxy grey slabs that fight the dropdown directly beneath
+ * them for attention. A single description reads as one paragraph of choices,
+ * with the blurb in Discord's small-text style so the labels carry the eye.
+ */
+function typeList(types) {
+  return types
+    .map((t) => {
+      const head = `${t.emoji ?? '🎫'}  **${t.label}**`;
+      return t.description ? `${head}\n-# ${t.description}` : head;
+    })
+    .join('\n\n');
+}
+
+function buildPanel(guild) {
   const types = (T().types ?? []).slice(0, 25); // Discord's hard limit on menu options
   if (!types.length) throw new Error('config.tickets.types is empty — there is nothing to offer.');
 
+  const p = T().panel ?? {};
+
+  const body = [p.description ?? 'Choose a category below to open a ticket.'];
+  if (p.showTypeList !== false) body.push(typeList(types));
+  if (p.notice) body.push(`-# ⚠️  ${p.notice}`);
+
   const embed = new EmbedBuilder()
-    .setColor(config.colors.ticket)
-    .setTitle(T().panel?.title ?? 'Support')
-    .setDescription(T().panel?.description ?? 'Choose a category below to open a ticket.')
-    .addFields(
-      types.map((t) => ({
-        name: `${t.emoji ?? '🎫'} ${t.label}`,
-        value: t.description ?? '​',
-        inline: false,
-      }))
-    );
+    .setColor(p.color ?? config.colors.ticket)
+    .setTitle(p.title ?? 'Support')
+    .setDescription(body.join('\n\n').slice(0, 4096));
+
+  const thumb = resolveImage(p.thumbnailUrl, guild, 'icon');
+  if (thumb) embed.setThumbnail(thumb);
+
+  const image = resolveImage(p.imageUrl, guild, 'banner');
+  if (image) embed.setImage(image);
+
+  if (p.footer) embed.setFooter({ text: p.footer });
 
   const menu = new StringSelectMenuBuilder()
     .setCustomId('ticket:open')
@@ -113,7 +149,7 @@ async function handleSelect(interaction) {
 
   // Put the dropdown back to its placeholder. Without this it keeps showing
   // whatever the last person picked, to everybody.
-  interaction.message.edit({ components: buildPanel().components }).catch(() => {});
+  interaction.message.edit({ components: buildPanel(interaction.guild).components }).catch(() => {});
 
   if (!type) return interaction.reply(ephemeral('That ticket type no longer exists.'));
 

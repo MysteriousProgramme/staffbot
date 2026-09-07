@@ -272,11 +272,11 @@ module.exports = {
     // Roles that can see and work EVERY ticket. Usually your rank roles, or
     // just the Staff Team role. Anyone without one of these cannot claim,
     // close, or even see a ticket they did not open.
-    staffRoleIds: [],
+    staffRoleIds: ['1531486709873639454', '1513855451555696740'],
 
     // Where transcripts are posted when a ticket closes. Make this private.
     // The transcript contains the entire conversation.
-    logChannelId: null,
+    logChannelId: '1546553158971424808',
 
     // Optional. /ticket escalate moves the channel here so senior staff have
     // one place to look. Leave null to escalate in place (ping only).
@@ -286,7 +286,7 @@ module.exports = {
     // obvious at a glance who is blocked. The database is the real gate —
     // removing the role by hand does NOT let them open tickets again.
     // Leave null to skip the role and use the database alone.
-    blacklistRoleId: null,
+    blacklistRoleId: '1546553585456644266',
 
     // Anti-spam. Both are per person; set either to 0 to turn it off.
     maxOpenPerUser: 1,
@@ -307,12 +307,33 @@ module.exports = {
     minMessagesToCredit: 3,
     creditEveryone: false,
 
-    // The message /ticketpanel posts.
+    // The message /ticketpanel posts. Everything here is cosmetic — change it
+    // freely and re-run /ticketpanel, the panel holds no state.
     panel: {
       title: 'Support',
       description:
-        'Need a hand? Pick the option that fits below and a private channel will open for you.',
+        'Pick the option that fits below and a private channel will open for you and the staff team.',
       placeholder: 'Choose a ticket type…',
+
+      // Accent bar down the left of the embed. null = colors.ticket.
+      color: null,
+
+      // Small image, top right. 'server' uses your server icon.
+      thumbnailUrl: 'server',
+
+      // Wide banner across the bottom. 'server' uses your server banner
+      // (needs a boosted server). A 1100x256-ish PNG looks best. null = none.
+      imageUrl: null,
+
+      // Repeat the options as a list above the dropdown. The dropdown already
+      // names them, so turn this off if you want a compact panel.
+      showTypeList: true,
+
+      // Small grey line under the list. Good for the rules people ignore.
+      notice: 'Opening a ticket for no reason may result in a mute or a ban.',
+
+      // Bottom line of the embed.
+      footer: 'One ticket at a time · a staff member will reply as soon as one is free',
     },
 
     // Every entry becomes one option in the panel dropdown.
@@ -320,6 +341,8 @@ module.exports = {
     //   key         internal id, must be unique and never reused
     //   categoryId  where this type's channels are created (REQUIRED)
     //   pingRoleIds pinged once when the ticket opens
+    //   color       accent colour of the ticket's opening embed. Omit to
+    //               colour it by priority instead.
     //   questions   0-5 fields shown as a form before the channel is made.
     //               Omit or leave empty to open with no questions asked.
     types: [
@@ -328,8 +351,9 @@ module.exports = {
         label: 'General Support',
         emoji: '🎫',
         description: 'Questions, help, anything else',
-        categoryId: null,
-        pingRoleIds: [],
+        color: 0x5865f2,
+        categoryId: '1510607597030609047',
+        pingRoleIds: ['1531486709873639454'],
         questions: [
           { id: 'subject', label: 'Short summary', style: 'short', required: true, max: 100 },
           { id: 'details', label: 'What do you need help with?', style: 'paragraph', required: true, max: 1000 },
@@ -340,8 +364,9 @@ module.exports = {
         label: 'Report a Player',
         emoji: '🚨',
         description: 'Rule breaking, cheating, harassment',
-        categoryId: null,
-        pingRoleIds: [],
+        color: 0xef4444,
+        categoryId: '1510607597030609047',
+        pingRoleIds: ['1531486709873639454'],
         questions: [
           { id: 'subject', label: 'Who are you reporting?', style: 'short', required: true, max: 100 },
           { id: 'details', label: 'What happened?', style: 'paragraph', required: true, max: 1000 },
@@ -353,8 +378,9 @@ module.exports = {
         label: 'Ban Appeal',
         emoji: '⚖️',
         description: 'Appeal a punishment on your account',
-        categoryId: null,
-        pingRoleIds: [],
+        color: 0xfbbf24,
+        categoryId: '1510607597030609047',
+        pingRoleIds: ['1531486709873639454'],
         questions: [
           { id: 'subject', label: 'Your username', style: 'short', required: true, max: 100 },
           { id: 'details', label: 'Why should this be overturned?', style: 'paragraph', required: true, max: 1000 },

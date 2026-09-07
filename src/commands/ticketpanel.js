@@ -55,7 +55,7 @@ module.exports = {
 
     const target = interaction.options.getChannel('channel') ?? interaction.channel;
 
-    await target.send(ticketPanel.buildPanel());
+    await target.send(ticketPanel.buildPanel(interaction.guild));
 
     return interaction.reply({
       embeds: [

@@ -212,22 +212,59 @@ function overwritesFor(guild, openerId, type) {
   return rows;
 }
 
+// Users, GuildMembers and the odd bare {id} all end up in these embeds.
+// Reaching for the wrong property on one of them throws inside an interaction
+// handler, where the only symptom is "This interaction failed".
+const nameOf = (u) => u?.displayName ?? u?.user?.username ?? u?.username ?? 'Someone';
+
+function avatarOf(u) {
+  try {
+    if (typeof u?.displayAvatarURL === 'function') return u.displayAvatarURL();
+    if (typeof u?.user?.displayAvatarURL === 'function') return u.user.displayAvatarURL();
+  } catch {
+    /* partials and mocks */
+  }
+  return undefined;
+}
+
+/**
+ * A one-line event: an avatar, a sentence, a colour down the side. Claiming and
+ * unclaiming happen constantly, and a full titled embed for each one buries the
+ * actual conversation under the bot talking about itself.
+ */
+function notice(color, text, iconURL) {
+  const author = { name: String(text).slice(0, 256) };
+  if (iconURL) author.iconURL = iconURL;
+  return new EmbedBuilder().setColor(color).setAuthor(author);
+}
+
+const UNCLAIMED_FOOTER = 'Unclaimed · staff, use the buttons below';
+
 function openingEmbed(ticket, type, opener, answers) {
   const priority = PRIORITIES[ticket.priority] ?? PRIORITIES.normal;
+
   const embed = new EmbedBuilder()
-    .setColor(priority.color)
-    .setTitle(`${type?.emoji ?? '🎫'} Ticket #${pad(ticket.number)} · ${type?.label ?? 'Ticket'}`)
+    .setColor(type?.color ?? priority.color)
+    .setAuthor({ name: nameOf(opener), iconURL: avatarOf(opener) })
+    .setTitle(`${type?.emoji ?? '🎫'}  ${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
     .setDescription(
-      `Opened by <@${opener.id}>. A staff member will be with you shortly.\n` +
-        'Please add anything else that might help while you wait.'
+      'Thanks for reaching out — a staff member will pick this up as soon as one is free.\n' +
+        '-# Screenshots, usernames, timestamps: the more that is in here, the faster this goes.'
     )
-    .setFooter({ text: 'Nobody has claimed this yet.' })
+    .setFooter({ text: UNCLAIMED_FOOTER })
     .setTimestamp(ticket.opened_at);
 
-  for (const q of type?.questions ?? []) {
+  for (const q of (type?.questions ?? []).slice(0, 5)) {
     const value = answers?.[q.id];
     if (!value) continue;
-    embed.addFields({ name: q.label.slice(0, 256), value: value.slice(0, 1024) });
+    // Short answers pair up two to a row; a wall of text gets the full width
+    // and a quote bar so it reads as their words rather than the bot's.
+    const paragraph = q.style === 'paragraph';
+    embed.addFields({
+      name: q.label.slice(0, 256),
+      value: (paragraph ? `>>> ${value}` : value).slice(0, 1024),
+      inline: !paragraph,
+    });
   }
 
   return embed;
@@ -311,7 +348,7 @@ async function createTicket({ guild, opener, type, answers = {} }) {
  * effort: a ticket whose opening message was deleted still works fine
  * through /ticket, so a failure here is never worth surfacing.
  */
-async function refreshButtons(channel, claimedBy) {
+async function refreshButtons(channel, claimedBy, claimerName) {
   try {
     // fetchPins() replaced fetchPinned() partway through discord.js v14, and
     // package.json accepts either side of that line.
@@ -320,7 +357,23 @@ async function refreshButtons(channel, claimedBy) {
       : [...(await channel.messages.fetchPinned()).values()];
 
     const mine = pins.find((m) => m.author.id === channel.client.user.id && m.components?.length);
-    if (mine) await mine.edit({ components: [ticketButtons(claimedBy)] });
+    if (!mine) return;
+
+    const payload = { components: [ticketButtons(claimedBy)] };
+
+    // Keep the pinned header honest about who owns this. Scrolling up to the
+    // top of a long ticket should answer "whose is this" without hunting for
+    // the claim message somewhere in the middle.
+    const existing = mine.embeds?.[0];
+    if (existing) {
+      payload.embeds = [
+        EmbedBuilder.from(existing).setFooter({
+          text: claimedBy ? `Claimed by ${claimerName ?? 'staff'}` : UNCLAIMED_FOOTER,
+        }),
+      ];
+    }
+
+    await mine.edit(payload);
   } catch {
     /* the buttons are a convenience, not the source of truth */
   }
@@ -328,13 +381,9 @@ async function refreshButtons(channel, claimedBy) {
 
 async function claim(channel, ticket, member) {
   db.setClaim(channel.id, member.id);
-  await refreshButtons(channel, member.id);
+  await refreshButtons(channel, member.id, nameOf(member));
   await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(config.colors.ready)
-        .setDescription(`🙋 <@${member.id}> claimed this ticket.`),
-    ],
+    embeds: [notice(config.colors.ready, `${nameOf(member)} claimed this ticket`, avatarOf(member))],
   });
 }
 
@@ -342,24 +391,22 @@ async function unclaim(channel, ticket) {
   db.clearClaim(channel.id);
   await refreshButtons(channel, null);
   await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(config.colors.neutral)
-        .setDescription('↩️ This ticket is unclaimed and back up for grabs.'),
-    ],
+    embeds: [notice(config.colors.neutral, 'Unclaimed — back up for grabs')],
   });
 }
 
 async function transfer(channel, ticket, target, actor) {
   db.setClaim(channel.id, target.id);
   db.addAudit(channel.guildId, actor.id, target.id, 'ticket_transfer', `#${pad(ticket.number)}`);
-  await refreshButtons(channel, target.id);
+  await refreshButtons(channel, target.id, nameOf(target));
   await channel.send({
     content: `<@${target.id}>`,
     embeds: [
-      new EmbedBuilder()
-        .setColor(config.colors.neutral)
-        .setDescription(`🔀 <@${actor.id}> handed this ticket to <@${target.id}>.`),
+      notice(
+        config.colors.neutral,
+        `${nameOf(actor)} handed this ticket to ${nameOf(target)}`,
+        avatarOf(target)
+      ),
     ],
   });
 }
@@ -403,17 +450,19 @@ async function escalate(channel, ticket, actor, reason) {
   db.markEscalated(channel.id, actor.id);
   db.addAudit(channel.guildId, actor.id, ticket.opener_id ?? actor.id, 'ticket_escalate', `#${pad(ticket.number)}`);
 
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.borderline)
+    .setAuthor({ name: `Escalated by ${nameOf(actor)}`, iconURL: avatarOf(actor) })
+    .setTitle('⚠️  Needs a more senior look')
+    .setDescription(
+      `This has been passed up to **${rank?.name ?? 'senior staff'}**.` +
+        (reason ? `\n\n>>> ${reason}` : '')
+    )
+    .setTimestamp();
+
   await channel.send({
     content: rank?.roleId ? `<@&${rank.roleId}>` : undefined,
-    embeds: [
-      new EmbedBuilder()
-        .setColor(config.colors.borderline)
-        .setTitle('⚠️ Escalated')
-        .setDescription(
-          `<@${actor.id}> escalated this to **${rank?.name ?? 'senior staff'}**.` +
-            (reason ? `\n\n> ${reason}` : '')
-        ),
-    ],
+    embeds: [embed],
   });
 
   return rank;
@@ -431,22 +480,15 @@ async function addUser(channel, member) {
     AttachFiles: true,
   });
   await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(config.colors.neutral)
-        .setDescription(`➕ <@${member.id}> was added to this ticket.`),
-    ],
+    content: `<@${member.id}>`,
+    embeds: [notice(config.colors.neutral, `${nameOf(member)} was added to this ticket`, avatarOf(member))],
   });
 }
 
 async function removeUser(channel, member) {
   await channel.permissionOverwrites.delete(member.id, 'Removed from ticket');
   await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(config.colors.neutral)
-        .setDescription(`➖ <@${member.id}> was removed from this ticket.`),
-    ],
+    embeds: [notice(config.colors.neutral, `${nameOf(member)} was removed from this ticket`, avatarOf(member))],
   });
 }
 
@@ -469,13 +511,7 @@ async function setPriority(channel, ticket, priority) {
   }
 
   const p = PRIORITIES[priority];
-  await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(p.color)
-        .setDescription(`${p.emoji} Priority is now **${p.label}**.`),
-    ],
-  });
+  await channel.send({ embeds: [notice(p.color, `${p.emoji}  Priority set to ${p.label}`)] });
 
   return renamed;
 }
@@ -504,31 +540,47 @@ async function rename(channel, ticket, rawName) {
 function closingEmbed(guild, ticket, credited, closer, reason) {
   const type = typeByKey(ticket.type_key);
   const mins = Math.max(0, Math.round((Date.now() - ticket.opened_at) / 60000));
-  const duration = mins < 60 ? `${mins} min` : `${(mins / 60).toFixed(1)} h`;
+  const duration =
+    mins < 60 ? `${mins} min` : mins < 1440 ? `${(mins / 60).toFixed(1)} h` : `${(mins / 1440).toFixed(1)} d`;
 
   const embed = new EmbedBuilder()
-    .setColor(config.colors.neutral)
-    .setTitle(`🔒 Ticket #${pad(ticket.number)} closed`)
+    .setColor(type?.color ?? config.colors.neutral)
+    .setAuthor({
+      name: closer ? `Closed by ${nameOf(closer)}` : 'Closed automatically',
+      iconURL: avatarOf(closer),
+    })
+    .setTitle(`🔒  ${type?.label ?? ticket.type_key ?? 'Ticket'} · #${pad(ticket.number)}`)
     .addFields(
-      { name: 'Type', value: type?.label ?? ticket.type_key ?? 'Ticket', inline: true },
       { name: 'Opened by', value: ticket.opener_id ? `<@${ticket.opener_id}>` : 'unknown', inline: true },
-      { name: 'Open for', value: duration, inline: true },
-      { name: 'Closed by', value: closer ? `<@${closer.id}>` : 'the system', inline: true },
       {
         name: 'Credited',
-        value: credited.length ? credited.map((id) => `<@${id}>`).join(', ') : 'nobody',
+        value: credited.length ? credited.map((id) => `<@${id}>`).join(', ') : '— nobody',
         inline: true,
       },
-      {
-        name: 'Claimed by',
-        value: ticket.claimed_by ? `<@${ticket.claimed_by}>` : 'never claimed',
-        inline: true,
-      }
+      { name: 'Open for', value: duration, inline: true }
     )
     .setTimestamp();
 
-  if (ticket.subject) embed.setDescription(`**${ticket.subject.slice(0, 250)}**`);
-  if (reason) embed.addFields({ name: 'Close reason', value: reason.slice(0, 1024) });
+  if (ticket.subject) embed.setDescription(`>>> ${ticket.subject.slice(0, 300)}`);
+
+  // The wait the person actually experienced, which is the number the
+  // responseSpeed metric is built on — worth seeing next to the credit.
+  if (ticket.first_response_at) {
+    const wait = Math.max(0, Math.round((ticket.first_response_at - ticket.opened_at) / 60000));
+    embed.addFields({
+      name: 'First reply',
+      value: wait < 1 ? 'under a minute' : `${wait} min`,
+      inline: true,
+    });
+  }
+
+  embed.addFields({
+    name: 'Claimed',
+    value: ticket.claimed_by ? `<@${ticket.claimed_by}>` : 'never claimed',
+    inline: true,
+  });
+
+  if (reason) embed.addFields({ name: 'Resolution', value: `>>> ${reason}`.slice(0, 1024) });
 
   return embed;
 }
