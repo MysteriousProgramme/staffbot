@@ -21,7 +21,13 @@ say "Registering slash commands"
 npm run deploy
 
 say "Restarting"
-if systemctl list-unit-files 2>/dev/null | grep -q '^staffbot.service'; then
+# `systemctl cat` exits non-zero when the unit does not exist, and it asks
+# systemd directly instead of grepping a table whose formatting is not a
+# contract. The previous check scraped `list-unit-files` for a line starting
+# with the unit name; on Ubuntu 24.04 that quietly stopped matching, so every
+# deploy pulled new code, said the service was not installed, and left the old
+# process running — the worst kind of failure, because it looks like a success.
+if systemctl cat staffbot.service >/dev/null 2>&1; then
   sudo systemctl restart staffbot
   sleep 3
   sudo systemctl --no-pager --lines=25 status staffbot || true
