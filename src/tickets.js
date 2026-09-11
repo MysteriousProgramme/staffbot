@@ -377,14 +377,18 @@ function openingEmbed(ticket, type, opener, answers) {
 
   const embed = new EmbedBuilder()
     .setColor(accentFor(ticket, type))
-    .setAuthor({ name: nameOf(opener), iconURL: avatarOf(opener) })
-    .setTitle(`${custom || !emoji ? '' : emoji + '  '}${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
+    .setAuthor({ name: `Opened by ${nameOf(opener)}`, iconURL: avatarOf(opener) })
+    .setTitle(
+      `${custom || !emoji ? '' : emoji + '  '}Ticket #${pad(ticket.number)} · ${type?.label ?? 'Ticket'}`
+    )
     .setDescription(
-      `${custom ? emoji + ' ' : ''}Thanks for reaching out — a staff member will pick this up as soon as one is free.\n` +
-        '-# Screenshots, usernames, timestamps: the more that is in here, the faster this goes.'
+      `${custom ? emoji + ' ' : ''}Thank you for contacting the staff team. ` +
+        'A member of staff will respond as soon as one is available.\n' +
+        '-# Adding screenshots, usernames and timestamps now will get this resolved faster.'
     )
     .addFields(headerFields(ticket))
-    .setFooter({ text: PIN_FOOTER })
+    // No footer text: the timestamp renders there on its own, and the line
+    // that used to sit here addressed staff in an embed the member reads.
     .setTimestamp(ticket.opened_at);
 
   for (const q of (type?.questions ?? []).slice(0, 5)) {
@@ -597,11 +601,8 @@ async function escalate(channel, ticket, actor, reason) {
   const embed = new EmbedBuilder()
     .setColor(config.colors.borderline)
     .setAuthor({ name: `Escalated by ${nameOf(actor)}`, iconURL: avatarOf(actor) })
-    .setTitle('Escalated')
-    .setDescription(
-      `This has been passed up to **${rank?.name ?? 'senior staff'}**.` +
-        (reason ? `\n\n>>> ${reason}` : '')
-    )
+    .setTitle(`Escalated to ${rank?.name ?? 'senior staff'}`)
+    .setDescription(reason ? `>>> ${reason}` : '-# No reason was given.')
     .setTimestamp();
 
   await channel.send({
@@ -694,7 +695,9 @@ function closingEmbed(guild, ticket, credited, closer, reason) {
       name: closer ? `Closed by ${nameOf(closer)}` : 'Closed automatically',
       iconURL: avatarOf(closer),
     })
-    .setTitle(`Closed · ${type?.label ?? ticket.type_key ?? 'Ticket'} · #${pad(ticket.number)}`)
+    // Same title shape as the opening embed, so a ticket reads the same way at
+    // both ends of its life.
+    .setTitle(`Ticket #${pad(ticket.number)} · ${type?.label ?? ticket.type_key ?? 'Ticket'}`)
     .addFields(
       { name: 'Opened by', value: ticket.opener_id ? `<@${ticket.opener_id}>` : 'unknown', inline: true },
       {
