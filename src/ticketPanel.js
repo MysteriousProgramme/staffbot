@@ -53,7 +53,7 @@ function resolveImage(value, guild, kind) {
 function typeList(types) {
   return types
     .map((t) => {
-      const head = `${t.emoji ?? '🎫'}  **${t.label}**`;
+      const head = t.emoji ? `${t.emoji}  **${t.label}**` : `**${t.label}**`;
       return t.description ? `${head}\n-# ${t.description}` : head;
     })
     .join('\n\n');
@@ -73,7 +73,7 @@ function buildPanel(guild) {
   // inline fields, which Discord packs up to three to a row — past about four
   // types the single column turns into a wall nobody reads to the bottom of.
   if (showList && !grid) body.push(typeList(types));
-  if (p.notice && !grid) body.push(`-# ⚠️  ${p.notice}`);
+  if (p.notice && !grid) body.push(`-# ${p.notice}`);
 
   const embed = new EmbedBuilder()
     .setColor(p.color ?? config.colors.ticket)
@@ -87,7 +87,7 @@ function buildPanel(guild) {
   if (showList && grid) {
     for (const t of types) {
       fields.push({
-        name: `${t.emoji ?? '🎫'} ${t.label}`.slice(0, 256),
+        name: (t.emoji ? `${t.emoji} ${t.label}` : t.label).slice(0, 256),
         value: (t.description || '​').slice(0, 1024),
         inline: true,
       });
@@ -109,7 +109,7 @@ function buildPanel(guild) {
   // Grid mode pushes the notice to the end, because fields render below the
   // description and a warning above the options reads as shouting first.
   if (p.notice && grid) {
-    fields.push({ name: '​', value: `-# ⚠️  ${p.notice}`.slice(0, 1024), inline: false });
+    fields.push({ name: '​', value: `-# ${p.notice}`.slice(0, 1024), inline: false });
   }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));

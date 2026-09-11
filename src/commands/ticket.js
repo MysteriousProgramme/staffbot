@@ -30,7 +30,7 @@ function requireTicket(interaction) {
 
 const note = (interaction, text) =>
   interaction.reply({
-    embeds: [new EmbedBuilder().setColor(config.colors.promote).setDescription(`✅ ${text}`)],
+    embeds: [new EmbedBuilder().setColor(config.colors.promote).setDescription(text)],
     flags: MessageFlags.Ephemeral,
   });
 
@@ -281,7 +281,7 @@ async function blacklistCommands(interaction, sub) {
 
     return note(
       interaction,
-      `**${user.username}** can no longer open tickets.` + (warning ? `\n⚠️ ${warning}` : '')
+      `**${user.username}** can no longer open tickets.` + (warning ? `\n${warning}` : '')
     );
   }
 
@@ -302,5 +302,5 @@ async function blacklistCommands(interaction, sub) {
       .setTimestamp()
   );
 
-  return note(interaction, `**${user.username}** can open tickets again.` + (warning ? `\n⚠️ ${warning}` : ''));
+  return note(interaction, `**${user.username}** can open tickets again.` + (warning ? `\n${warning}` : ''));
 }

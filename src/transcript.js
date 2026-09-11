@@ -65,7 +65,7 @@ function renderMessage(m) {
     // The URL is a signed CDN link that expires. Recording the filename and
     // size means the transcript still says what was attached once it does.
     bits.push(
-      `<div class="attach">📎 <a href="${esc(a.url)}">${esc(a.name)}</a> ` +
+      `<div class="attach">Attachment: <a href="${esc(a.url)}">${esc(a.name)}</a> ` +
         `<span class="dim">(${Math.round((a.size ?? 0) / 1024)} KB)</span></div>`
     );
   }

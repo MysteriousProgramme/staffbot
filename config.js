@@ -313,9 +313,10 @@ const config = {
     // Zero-padding for {number}. Numbers never repeat, even after deletes.
     numberPadding: 4,
 
-    // Put a coloured dot in front of high and urgent tickets so they sort
-    // to the top of the category. Set false for plain names.
-    priorityPrefix: true,
+    // Puts a coloured dot in front of high and urgent tickets so they sort to
+    // the top of the category. Off, for plain text channel names — priority is
+    // still shown on the ticket itself and in the dashboard.
+    priorityPrefix: false,
 
     // Credit rules, used when a ticket closes without ever being claimed.
     // Same reasoning as Ticket King's: doing the talking earns the credit,
@@ -326,11 +327,12 @@ const config = {
     // The message /ticketpanel posts. Everything here is cosmetic — change it
     // freely and re-run /ticketpanel, the panel holds no state.
     panel: {
-      title: 'Tempest SMP · Support',
+      title: 'Tempest SMP Support',
       description:
-        'Pick the option that fits and a private channel opens for you and the staff team.',
+        'Select the option that best matches your request. A private channel will be ' +
+        'opened for you and the staff who handle that area.',
 
-      placeholder: 'Choose a ticket type…',
+      placeholder: 'Select a category',
 
       // Accent bar down the left of the embed. null = colors.ticket.
       color: null,
@@ -358,31 +360,31 @@ const config = {
       // entry and swap in your rules channel to do that.
       fields: [
         {
-          name: '⏱️ How long will it take?',
+          name: 'Response times',
           value:
-            'Usually under an hour while staff are online. Appeals and partnerships can take a day, ' +
-            'and it is one appeal per punishment.',
+            'Most tickets are answered within the hour while staff are online. ' +
+            'Appeals and partnership enquiries are reviewed by senior staff and may take up to 24 hours.',
           inline: false,
         },
         // {
-        //   name: '📕 Before you open one',
-        //   value: 'Most answers are already in <#YOUR_RULES_CHANNEL_ID>.',
+        //   name: 'Before opening a ticket',
+        //   value: 'Most questions are already answered in <#YOUR_RULES_CHANNEL_ID>.',
         //   inline: false,
         // },
       ],
 
-      notice: 'Opening a ticket for no reason may result in a mute, kick or ban.',
-      footer: 'One ticket at a time · a staff member will reply as soon as one is free',
+      notice:
+        'Tickets opened without a genuine reason may result in a mute or a removal from the server.',
+      footer: 'One open ticket per member  ·  Appeals are limited to one per punishment',
     },
 
     // Every entry becomes one option in the panel dropdown.
     //
     //   key         internal id, must be unique and never reused
-    //   emoji       shown in the dropdown and beside the label. A SERVER
+    //   emoji       OPTIONAL. Omit it for a plain, text-only panel. A server
     //               emoji works too — paste it as <:name:id>, or <a:name:id>
-    //               when animated. Type \:name: in Discord and send it to
-    //               get that text. The bot must be in a server that has it.
-    //               Note Discord does not render custom emoji in an embed
+    //               when animated. Type \:name: in Discord and send it to get
+    //               that text. Discord does not render custom emoji in an embed
     //               title or footer, so keep them out of panel.title and
     //               panel.footer; npm run check warns if you do not.
     //   categoryId  where this type's channels are created (REQUIRED)
@@ -399,9 +401,8 @@ const config = {
     types: [
       {
         key: 'support',
-        label: 'Server Issue or Question',
-        emoji: '🛠️',
-        description: 'Bugs, lag, lost items',
+        label: 'General Support',
+        description: 'Bugs, lag and lost items',
         color: 0x5865f2,
         categoryId: '1510607597030609047',
         pingRoleIds: ['1531486709873639454'],
@@ -413,8 +414,7 @@ const config = {
       },
       {
         key: 'report',
-        label: 'Report a Player',
-        emoji: '🚨',
+        label: 'Player Report',
         description: 'Griefing, cheating, harassment',
         color: 0xef4444,
         categoryId: '1510607597030609047',
@@ -431,9 +431,8 @@ const config = {
         // read this, so the only people who see it are the owner roles pinged
         // below — including when the report is about a Head Mod.
         key: 'staffreport',
-        label: 'Report a Staff Member',
-        emoji: '🛡️',
-        description: 'Owners only — staff cannot see',
+        label: 'Staff Report',
+        description: 'Reviewed by ownership only',
         color: 0xa855f7,
         categoryId: '1510607597030609047',
         staffRoleIds: [],
@@ -454,7 +453,6 @@ const config = {
         // person reading the appeal against it.
         key: 'appeal',
         label: 'Punishment Appeal',
-        emoji: '⚖️',
         description: 'Bans, mutes and kicks',
         color: 0xfbbf24,
         categoryId: '1510607597030609047',
@@ -469,9 +467,8 @@ const config = {
       },
       {
         key: 'partnership',
-        label: 'Partnership',
-        emoji: '🤝',
-        description: 'Collaborations and promos',
+        label: 'Partnership Enquiry',
+        description: 'Collaborations and promotion',
         color: 0x22c55e,
         categoryId: '1510607597030609047',
         staffRoleIds: [],
@@ -492,7 +489,6 @@ const config = {
       // {
       //   key: 'application',
       //   label: 'Staff Application',
-      //   emoji: '📋',
       //   description: 'Applications are open',
       //   color: 0x818cf8,
       //   categoryId: '1510607597030609047',

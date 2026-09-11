@@ -1639,7 +1639,7 @@ check('the check survives ids arriving as different types', () => {
 
 check('the header shows who has it, or that nobody does', () => {
   const waiting = tickets.headerFields({ priority: 'normal' });
-  assert.ok(/Waiting/.test(waiting[0].value), waiting[0].value);
+  assert.strictEqual(waiting[0].value, 'Unclaimed', waiting[0].value);
 
   const claimed = tickets.headerFields({ priority: 'normal', claimed_by: '42' });
   assert.ok(claimed[0].value.includes('<@42>'), 'a mention renders in a field value, a name would need fetching');
@@ -1691,7 +1691,11 @@ check('a channel is named type-number-user', () => {
   );
 });
 
-check('high and urgent are marked so they sort to the top', () => {
+check('with the marker on, high and urgent sort to the top', () => {
+  // Pinned rather than inherited: the shipped config turns this off, and the
+  // mechanism still has to work for anyone who turns it back on.
+  const saved = TCFG.priorityPrefix;
+  TCFG.priorityPrefix = true;
   assert.strictEqual(
     tickets.channelNameFor({ number: 7, typeKey: 'appeal', username: 'Steve', priority: 'urgent' }),
     '🔴-appeal-0007-steve'
@@ -1700,16 +1704,30 @@ check('high and urgent are marked so they sort to the top', () => {
     tickets.channelNameFor({ number: 7, typeKey: 'appeal', username: 'Steve', priority: 'low' }),
     'appeal-0007-steve'
   );
+  TCFG.priorityPrefix = saved;
+});
+
+check('the shipped config names channels in plain text', () => {
+  assert.strictEqual(
+    tickets.channelNameFor({ number: 7, typeKey: 'appeal', username: 'Steve', priority: 'urgent' }),
+    'appeal-0007-steve'
+  );
 });
 
 check('changing priority swaps the marker without rebuilding the name', () => {
   // It has to work this way: by the time priority changes we no longer know
   // what the opener was called.
+  const saved = TCFG.priorityPrefix;
+  TCFG.priorityPrefix = true;
   const named = tickets.channelNameFor({ number: 3, typeKey: 'support', username: 'Asker' });
   const urgent = tickets.withPriorityPrefix(named, 'urgent');
   assert.strictEqual(urgent, '🔴-support-0003-asker');
   assert.strictEqual(tickets.withPriorityPrefix(urgent, 'normal'), 'support-0003-asker');
   assert.strictEqual(tickets.withPriorityPrefix(urgent, 'high'), '🟠-support-0003-asker');
+  TCFG.priorityPrefix = saved;
+
+  // And a name carrying an old marker gets cleaned when the feature is off.
+  assert.strictEqual(tickets.withPriorityPrefix(urgent, 'urgent'), 'support-0003-asker');
 });
 
 check('a username Discord would reject is cleaned up', () => {

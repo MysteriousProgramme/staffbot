@@ -30,11 +30,15 @@ const transcript = require('./transcript');
 
 const T = () => config.tickets ?? {};
 
+// `prefix` is only used when tickets.priorityPrefix is on. It is the one
+// place a symbol still earns its keep: Discord sorts channels by name, and a
+// leading character is the only way to float urgent tickets to the top of a
+// category. It is off by default.
 const PRIORITIES = {
-  low: { label: 'Low', emoji: '🔵', prefix: '', color: 0x60a5fa },
-  normal: { label: 'Normal', emoji: '⚪', prefix: '', color: config.colors.ticket },
-  high: { label: 'High', emoji: '🟠', prefix: '🟠-', color: 0xfb923c },
-  urgent: { label: 'Urgent', emoji: '🔴', prefix: '🔴-', color: 0xef4444 },
+  low: { label: 'Low', prefix: '', color: 0x60a5fa },
+  normal: { label: 'Normal', prefix: '', color: config.colors.ticket },
+  high: { label: 'High', prefix: '🟠-', color: 0xfb923c },
+  urgent: { label: 'Urgent', prefix: '🔴-', color: 0xef4444 },
 };
 
 const isTrackedStaff = (guildId, userId) => Boolean(db.getStaff(guildId, userId));
@@ -348,10 +352,10 @@ function headerFields(ticket) {
   return [
     {
       name: F_STATUS,
-      value: ticket.claimed_by ? `🟢 <@${ticket.claimed_by}>` : '🟡 Waiting for staff',
+      value: ticket.claimed_by ? `<@${ticket.claimed_by}>` : 'Unclaimed',
       inline: true,
     },
-    { name: F_PRIORITY, value: `${p.emoji} ${p.label}`, inline: true },
+    { name: F_PRIORITY, value: p.label, inline: true },
   ];
 }
 
@@ -368,13 +372,13 @@ function accentFor(ticket, type) {
 function openingEmbed(ticket, type, opener, answers) {
   // A server emoji in the title would print as literal <:name:id>, so it goes
   // to the front of the description instead, where Discord does resolve it.
-  const emoji = type?.emoji ?? '🎫';
+  const emoji = type?.emoji ?? '';
   const custom = isCustomEmoji(emoji);
 
   const embed = new EmbedBuilder()
     .setColor(accentFor(ticket, type))
     .setAuthor({ name: nameOf(opener), iconURL: avatarOf(opener) })
-    .setTitle(`${custom ? '' : emoji + '  '}${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
+    .setTitle(`${custom || !emoji ? '' : emoji + '  '}${type?.label ?? 'Ticket'} · #${pad(ticket.number)}`)
     .setDescription(
       `${custom ? emoji + ' ' : ''}Thanks for reaching out — a staff member will pick this up as soon as one is free.\n` +
         '-# Screenshots, usernames, timestamps: the more that is in here, the faster this goes.'
@@ -407,17 +411,14 @@ function ticketButtons(claimedBy) {
           .setCustomId('ticket:unclaim')
           .setLabel('Unclaim')
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji('↩️')
       : new ButtonBuilder()
           .setCustomId('ticket:claim')
           .setLabel('Claim')
-          .setStyle(ButtonStyle.Success)
-          .setEmoji('🙋'),
+          .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('ticket:close')
       .setLabel('Close')
       .setStyle(ButtonStyle.Danger)
-      .setEmoji('🔒')
   );
 }
 
@@ -596,7 +597,7 @@ async function escalate(channel, ticket, actor, reason) {
   const embed = new EmbedBuilder()
     .setColor(config.colors.borderline)
     .setAuthor({ name: `Escalated by ${nameOf(actor)}`, iconURL: avatarOf(actor) })
-    .setTitle('⚠️  Needs a more senior look')
+    .setTitle('Escalated')
     .setDescription(
       `This has been passed up to **${rank?.name ?? 'senior staff'}**.` +
         (reason ? `\n\n>>> ${reason}` : '')
@@ -656,7 +657,7 @@ async function setPriority(channel, ticket, priority) {
   await refreshPin(channel, db.getTicket(channel.id));
 
   const p = PRIORITIES[priority];
-  await channel.send({ embeds: [notice(p.color, `${p.emoji}  Priority set to ${p.label}`)] });
+  await channel.send({ embeds: [notice(p.color, `Priority set to ${p.label}`)] });
 
   return renamed;
 }
@@ -693,7 +694,7 @@ function closingEmbed(guild, ticket, credited, closer, reason) {
       name: closer ? `Closed by ${nameOf(closer)}` : 'Closed automatically',
       iconURL: avatarOf(closer),
     })
-    .setTitle(`🔒  ${type?.label ?? ticket.type_key ?? 'Ticket'} · #${pad(ticket.number)}`)
+    .setTitle(`Closed · ${type?.label ?? ticket.type_key ?? 'Ticket'} · #${pad(ticket.number)}`)
     .addFields(
       { name: 'Opened by', value: ticket.opener_id ? `<@${ticket.opener_id}>` : 'unknown', inline: true },
       {
