@@ -105,7 +105,9 @@ To run it 24/7:
 |---|---|---|
 | `/trial start user: days:` | Head Mod+ | Hire as Trial Staff, start the clock and the tracking |
 | `/trial extend user: days:` | Head Mod+ | Not sure yet? Buy more time instead of guessing |
-| `/trial end user:` | Head Mod+ | End early and post the card now |
+| `/trial end user:` | Head Mod+ | End early and post the card, decide later |
+| `/trial pass user: reason: [rank:]` | Head Mod+ | Pass them, move them up off the trial, post the card |
+| `/trial fail user: reason:` | Head Mod+ | Fail them, take them off the team, post the card |
 | `/trial list` | Head Mod+ | Every trial running, and who's waiting on a decision |
 | `/promote user: reason: [rank:]` | Head Mod+ | Up one rank, or jump to a specific one |
 | `/demote user: reason: [rank:] [remove:]` | Head Mod+ | Down one rank, or off the team |

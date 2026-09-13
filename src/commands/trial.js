@@ -58,6 +58,42 @@ module.exports = {
         .setDescription('End a trial now and post the review card')
         .addUserOption((o) => o.setName('user').setDescription('Who').setRequired(true))
     )
+    .addSubcommand((s) =>
+      s
+        .setName('pass')
+        .setDescription('Pass the trial and move them up off it')
+        .addUserOption((o) => o.setName('user').setDescription('Who').setRequired(true))
+        .addStringOption((o) =>
+          o
+            .setName('reason')
+            .setDescription('Why — PRIVATE, goes to the staff log and their DM only')
+            .setRequired(true)
+        )
+        .addStringOption((o) =>
+          o
+            .setName('rank')
+            .setDescription('Where to put them (default: one step up)')
+            .addChoices(...R.ranks.slice(1).map((r) => ({ name: r.name, value: r.key })))
+        )
+        .addStringOption((o) =>
+          o.setName('note').setDescription(noteDesc('promote')).setRequired(false).setMaxLength(150)
+        )
+    )
+    .addSubcommand((s) =>
+      s
+        .setName('fail')
+        .setDescription('Fail the trial and take them off the team')
+        .addUserOption((o) => o.setName('user').setDescription('Who').setRequired(true))
+        .addStringOption((o) =>
+          o
+            .setName('reason')
+            .setDescription('Why — PRIVATE, goes to the staff log and their DM only')
+            .setRequired(true)
+        )
+        .addStringOption((o) =>
+          o.setName('note').setDescription(noteDesc('remove')).setRequired(false).setMaxLength(150)
+        )
+    )
     .addSubcommand((s) => s.setName('list').setDescription('Show all trials in progress')),
 
   async execute(interaction) {
@@ -74,6 +110,8 @@ module.exports = {
     if (sub === 'start') return start(interaction, actor);
     if (sub === 'extend') return extend(interaction, actor);
     if (sub === 'end') return end(interaction, actor);
+    if (sub === 'pass') return decide(interaction, actor, true);
+    if (sub === 'fail') return decide(interaction, actor, false);
     if (sub === 'list') return list(interaction);
   },
 };
@@ -181,6 +219,156 @@ async function extend(interaction, actor) {
 
   await receipt(interaction, `**${user.username}**'s trial extended by ${days} days`);
   await logAction(interaction.guild, embed);
+}
+
+const OPEN_STATES = ['active', 'midpoint_posted', 'awaiting_review'];
+
+/**
+ * Resolve a trial in one move: settle the outcome, move the rank, post the
+ * final card.
+ *
+ * Before this existed the sequence was /trial end, read the card, then
+ * /promote or /demote — three steps, and the middle one is easy to forget, so
+ * trials sat in awaiting_review for weeks while the person stayed on Trial
+ * Staff. Both outcomes share this function because the checks, the scorecard
+ * and the audit trail are identical; only the direction differs.
+ *
+ * It does NOT refuse to pass somebody the numbers flagged BELOW BAR. The bot
+ * recommends and a human decides — that is the whole design. What it does do
+ * is put the score and the flag in the receipt, the log and the audit row, so
+ * an override is always on the record as an override.
+ */
+async function decide(interaction, actor, passed) {
+  const user = interaction.options.getUser('user');
+  const reason = interaction.options.getString('reason');
+  const publicNote = interaction.options.getString('note');
+
+  const row = db.getStaff(interaction.guildId, user.id);
+  if (!row?.trial_started_at) return err(interaction, `**${user.username}** is not on a trial.`);
+  if (!OPEN_STATES.includes(row.trial_state ?? '')) {
+    return err(
+      interaction,
+      `**${user.username}**'s trial is already resolved (${row.trial_state}). Use /promote or /demote.`
+    );
+  }
+
+  const target = await interaction.guild.members.fetch(user.id).catch(() => null);
+  if (!target) return err(interaction, 'That user is not in this server.');
+
+  const currentIdx = R.memberRankIndex(target);
+  const explicit = interaction.options.getString('rank');
+  const destIdx = passed
+    ? explicit
+      ? R.indexOfKey(explicit)
+      : Math.max(currentIdx, 0) + 1
+    : -1;
+
+  if (passed) {
+    if (destIdx >= R.ranks.length) {
+      return err(interaction, `**${user.username}** is already at the top of the ladder.`);
+    }
+    if (destIdx <= currentIdx) {
+      return err(interaction, 'That is not a promotion — pick a rank above their current one.');
+    }
+  }
+
+  const blocked = R.checkActionAllowed(actor, target, passed ? destIdx : null);
+  if (blocked) return err(interaction, blocked);
+
+  // Built BEFORE the rank changes, so it measures the trial that just ended
+  // rather than the rank they are about to hold.
+  const { embed: card, score, v } = buildReviewCard(interaction.guild, row, user);
+
+  try {
+    await R.applyRank(target, destIdx, `Trial ${passed ? 'passed' : 'failed'} (${actor.user.tag}): ${reason}`);
+  } catch (e) {
+    return err(
+      interaction,
+      `Discord refused the role change: \`${e.message}\`. Check the bot's role sits above the rank roles.`
+    );
+  }
+
+  const from = currentIdx >= 0 ? R.ranks[currentIdx].name : 'not staff';
+  const to = destIdx >= 0 ? R.ranks[destIdx] : null;
+
+  if (to) {
+    db.setRank(interaction.guildId, user.id, to.key, actor.id);
+    db.clearTrial(interaction.guildId, user.id, 'passed');
+  } else {
+    // The staff row goes, so the outcome survives in the audit trail rather
+    // than on a record that no longer exists.
+    db.clearTrial(interaction.guildId, user.id, 'failed');
+    db.removeStaff(interaction.guildId, user.id);
+  }
+
+  db.addAudit(
+    interaction.guildId,
+    actor.id,
+    user.id,
+    passed ? 'trial_pass' : 'trial_fail',
+    `${from} → ${to?.name ?? 'removed'} · scored ${score}/100 (${v?.label ?? 'no verdict'}): ${reason}`
+  );
+
+  const color = passed ? config.colors.promote : config.colors.demote;
+
+  await postToReviews(interaction.guild, { embeds: [card] });
+
+  await logAction(
+    interaction.guild,
+    new EmbedBuilder()
+      .setColor(color)
+      .setAuthor({
+        name: `${user.username} ${passed ? 'passed' : 'failed'} their trial`,
+        iconURL: user.displayAvatarURL(),
+      })
+      .setDescription(`**${from}** → **${to?.name ?? 'removed from the team'}**`)
+      .addFields(
+        { name: 'Score', value: `${score}/100 · ${v?.label ?? '—'}`, inline: true },
+        { name: 'Decided by', value: `<@${actor.id}>`, inline: true },
+        { name: 'User', value: `<@${user.id}>`, inline: true },
+        { name: 'Reason', value: reason }
+      )
+      .setTimestamp()
+  );
+
+  const announceKey = passed ? 'onPromote' : 'onRemove';
+  if (config.announcements?.[announceKey]) {
+    await announce(
+      interaction.guild,
+      buildMovement({
+        guild: interaction.guild,
+        userId: user.id,
+        username: user.username,
+        avatarURL: user.displayAvatarURL(),
+        fromRank: currentIdx >= 0 ? R.ranks[currentIdx] : null,
+        toRank: to,
+        note: publicNote,
+        kind: passed ? 'promote' : 'remove',
+        color,
+      })
+    );
+  }
+
+  await tryDM(user, {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(color)
+        .setTitle(
+          passed
+            ? `You passed your trial in ${interaction.guild.name}`
+            : `Your trial in ${interaction.guild.name} has ended`
+        )
+        .setDescription(`**${from}** → **${to?.name ?? 'no longer on the staff team'}**\n\n${reason}`),
+    ],
+  });
+
+  return receipt(
+    interaction,
+    passed
+      ? `**${user.username}**: ${from} → **${to.name}** · scored ${score}/100 (${v?.label ?? '—'})`
+      : `**${user.username}** failed their trial and is off the team · scored ${score}/100 (${v?.label ?? '—'})`,
+    { announced: Boolean(config.announcements?.[announceKey]) }
+  );
 }
 
 async function end(interaction, actor) {
