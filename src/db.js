@@ -234,6 +234,15 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_tickets_opener ON tickets (guild_id, ope
 // NOT EXISTS silently does nothing to an existing table, so without this the
 // bot would throw at require() time on any database that predates the change —
 // which takes the whole process down before it ever reaches an error handler.
+// A trial used to mean one thing: a new hire on probation. Promotions into
+// the senior ranks are probationary too now, and failing one sends the person
+// back to the rank they came from rather than off the team — so the row has to
+// remember which kind it is and where they were standing before.
+ensureColumns('staff', {
+  trial_kind: 'TEXT',
+  trial_from_rank: 'TEXT',
+});
+
 ensureColumns('adjustments', {
   expires_at: 'INTEGER',
   revoked_at: 'INTEGER',
@@ -271,7 +280,9 @@ const stmts = {
   `),
   deleteStaff: db.prepare('DELETE FROM staff WHERE guild_id = ? AND user_id = ?'),
   setTrial: db.prepare(
-    'UPDATE staff SET trial_started_at = ?, trial_ends_at = ?, trial_state = ? WHERE guild_id = ? AND user_id = ?'
+    `UPDATE staff SET trial_started_at = ?, trial_ends_at = ?, trial_state = ?,
+                      trial_kind = ?, trial_from_rank = ?
+     WHERE guild_id = ? AND user_id = ?`
   ),
   setTrialState: db.prepare('UPDATE staff SET trial_state = ? WHERE guild_id = ? AND user_id = ?'),
   setTrialEnd: db.prepare('UPDATE staff SET trial_ends_at = ? WHERE guild_id = ? AND user_id = ?'),
@@ -567,8 +578,13 @@ module.exports = {
 
   removeStaff: (g, u) => stmts.deleteStaff.run(g, u),
 
-  startTrial(guildId, userId, endsAt) {
-    stmts.setTrial.run(now(), endsAt, 'active', guildId, userId);
+  /**
+   * kind 'hire' is a new staff member on probation; 'promotion' is somebody
+   * already on the team proving they can hold a senior rank. fromRank is where
+   * to put them back if a promotion trial fails.
+   */
+  startTrial(guildId, userId, endsAt, { kind = 'hire', fromRank = null } = {}) {
+    stmts.setTrial.run(now(), endsAt, 'active', kind, fromRank, guildId, userId);
   },
   setTrialState: (g, u, state) => stmts.setTrialState.run(state, g, u),
   setTrialEnd: (g, u, ts) => stmts.setTrialEnd.run(ts, g, u),

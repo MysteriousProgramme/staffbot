@@ -95,7 +95,23 @@ module.exports = {
     if (row?.trial_state && ['active', 'midpoint_posted', 'awaiting_review'].includes(row.trial_state)) {
       db.clearTrial(interaction.guildId, user.id, 'passed');
     }
-    db.addAudit(interaction.guildId, actor.id, user.id, 'promote', `${from} → ${to.name}: ${reason}`);
+    // Promotions into the senior ranks land on probation rather than
+    // outright: they get the rank now and have to hold it for the window.
+    const probationDays = config.trial?.promotionTrials?.[to.key];
+    if (probationDays) {
+      db.startTrial(interaction.guildId, user.id, Date.now() + probationDays * 86400000, {
+        kind: 'promotion',
+        fromRank: currentIdx >= 0 ? R.ranks[currentIdx].key : null,
+      });
+    }
+
+    db.addAudit(
+      interaction.guildId,
+      actor.id,
+      user.id,
+      'promote',
+      `${from} → ${to.name}${probationDays ? ` (${probationDays}-day probation)` : ''}: ${reason}`
+    );
 
     const embed = new EmbedBuilder()
       .setColor(config.colors.promote)
@@ -109,9 +125,16 @@ module.exports = {
       .setTimestamp();
 
     // Ephemeral — the reason must not land in whatever channel this was run in.
-    await receipt(interaction, `**${user.username}**: ${from} → **${to.name}**`, {
-      announced: Boolean(config.announcements?.onPromote),
-    });
+    await receipt(
+      interaction,
+      `**${user.username}**: ${from} → **${to.name}**` +
+        (probationDays
+          ? `\n_On a ${probationDays}-day probation — /trial pass or /trial fail when it is up._`
+          : ''),
+      {
+        announced: Boolean(config.announcements?.onPromote),
+      }
+    );
     await logAction(interaction.guild, embed);
 
     // Public staff-movements post — the private `reason` is never included.

@@ -153,6 +153,51 @@ const text = (i) =>
   check('a refused pass leaves the trial untouched',
     db.getStaff(G, 'peer')?.trial_state === 'active', db.getStaff(G, 'peer')?.trial_state);
 
+  // ---- promotion probation ----
+  // Failing one of these puts the person back where they came from; failing a
+  // hire trial takes them off the team. Getting that backwards would either
+  // sack a Head Mod over a quiet fortnight or leave a failed one in post.
+  const MOD = R.ranks[3];
+  const HEADMOD = R.ranks[4];
+  const MANAGER = R.ranks[5];
+
+  const onProbation = (id, name) => {
+    members.set(id, member(id, name, [HEADMOD.roleId]));
+    members.get(id).guild = guild;
+    db.setRank(G, id, HEADMOD.key, "boss");
+    db.startTrial(G, id, Date.now() + 14 * DAY, { kind: 'promotion', fromRank: MOD.key });
+  };
+
+  onProbation('climber', 'Climber');
+  i = interaction('fail', { user: 'climber', reason: 'not ready for the workload' }, 'boss');
+  await trial.execute(i);
+
+  check('a failed probation goes back a rank, not off the team',
+    db.getStaff(G, 'climber')?.rank_key === MOD.key, JSON.stringify(db.getStaff(G, 'climber')));
+  check('a failed probation keeps them on the staff table', Boolean(db.getStaff(G, 'climber')));
+  check('a failed probation swaps the Discord roles back',
+    members.get('climber').roles.cache.has(MOD.roleId) &&
+    !members.get('climber').roles.cache.has(HEADMOD.roleId));
+  check('the receipt says sent back, not removed', /back to/i.test(text(i)), text(i));
+
+  onProbation('holder', 'Holder');
+  i = interaction('pass', { user: 'holder', reason: 'held it well' }, 'boss');
+  await trial.execute(i);
+
+  check('a passed probation keeps the rank they already had',
+    db.getStaff(G, 'holder')?.rank_key === HEADMOD.key, db.getStaff(G, 'holder')?.rank_key);
+  check('a passed probation does NOT push them up another rank',
+    !members.get('holder').roles.cache.has(MANAGER.roleId));
+  check('a passed probation resolves the trial',
+    db.getStaff(G, 'holder')?.trial_state === 'passed', db.getStaff(G, 'holder')?.trial_state);
+  check('the receipt says confirmed', /confirmed as/i.test(text(i)), text(i));
+
+  onProbation('sneaky', 'Sneaky');
+  i = interaction('pass', { user: 'sneaky', reason: 'x', rank: MANAGER.key }, 'boss');
+  await trial.execute(i);
+  check('passing a probation cannot be used to jump them a rank',
+    /promote/i.test(text(i)) && db.getStaff(G, 'sneaky')?.rank_key === HEADMOD.key, text(i));
+
   for (const t of ['staff', 'metrics', 'audit', 'vouches', 'notes']) {
     db.db.exec(`DELETE FROM ${t} WHERE guild_id='${G}'`);
   }

@@ -22,6 +22,7 @@ const config = {
     { key: 'headstaff', name: 'Head Staff',  roleId: '1503657248793034893' },
     { key: 'mod',       name: 'Mod',         roleId: '1513855672763023410' },
     { key: 'headmod',   name: 'Head Mod',    roleId: '1513855451555696740' },
+    { key: 'manager',   name: 'Manager',     roleId: '1518522106739032156' },
   ],
 
   // Your "Staff Team" ping role. Added on hire, removed on full removal.
@@ -53,10 +54,13 @@ const config = {
     // vice versa. Everyone holding one of these sits at the same ceiling, and
     // the "never act on someone at or above your own rank" rule still applies
     // between them. Only the Discord server owner is above all of it.
+    // Manager used to sit here. It is a ladder rank now (see 1), because a
+    // role that both outranks everyone AND is subject to rank rules can
+    // promote and demote its own peers — the one thing the ladder exists to
+    // prevent. Founder and Owner stay above the ladder entirely.
     overrideRoleIds: [
       '1503657119843614720',   // Founder
       '1514544622423113809',   // Owner
-      '1518522106739032156',   // Co-Owner
     ],
 
     // Should people holding an override role be TRACKED as staff — measured,
@@ -537,6 +541,20 @@ const config = {
   // 5. TRIAL SETTINGS
   // ----------------------------------------------------------
   trial: {
+    // Promotions INTO these ranks are probationary: the person gets the rank
+    // and its permissions on day one, then has this many days to show they can
+    // do the job. /trial pass confirms them, /trial fail puts them back where
+    // they came from — NOT off the team, which is what failing a hire trial
+    // does.
+    //
+    // Seniority is where a bad call is expensive, which is why it applies here
+    // and not to the lower rungs. Keyed by destination rank; delete a line to
+    // make that promotion immediate again.
+    promotionTrials: {
+      headmod: 14,
+      manager: 14,
+    },
+
     defaultDays: 14,
     checkIntervalMinutes: 15,
     // Post a progress card at this fraction of the trial. null to disable.
@@ -699,26 +717,96 @@ const config = {
     // judged mostly on ticket volume and turning up. A Head Mod barely is —
     // by then the job is being present for the team, and someone who is still
     // grinding tickets instead of running the team is doing the rank below.
+  // Per-rank targets and weights.
+  //
+  // Seniors are expected to moderate and be present rather than grind tickets,
+  // so ticketsHandled falls as you climb while modActions and staffPresence
+  // rise. What was wrong before: nothing rose fast enough to make up for the
+  // ticket drop, which left HEAD STAFF the most demanding rank on the ladder —
+  // above Mod and Head Mod. The combined leaderboard reads difficulty straight
+  // out of these numbers, so that ordering mattered.
+  //
+  // Run `node -e "console.log(require('./src/rankWeight').weights())"` after
+  // changing anything here; the weight must rise with every rank.
     profiles: {
       staff: {
-        targets: { ticketsHandled: 18, activeDays: 18, inGameActivity: 180, channelBreadth: 8,  modActions: 12, responseSpeed: 20, staffPresence: 60,  publicActivity: 200 },
+        targets: {
+        ticketsHandled: 18,
+        activeDays: 18,
+        inGameActivity: 180,
+        channelBreadth: 8,
+        modActions: 12,
+        responseSpeed: 20,
+        staffPresence: 60,
+        publicActivity: 200,
+      },
         weights: { ticketsHandled: 28, activeDays: 20, inGameActivity: 18,  channelBreadth: 6,  modActions: 10, responseSpeed: 12, staffPresence: 4,   publicActivity: 2 },
         expects: 'Handles tickets without being asked, and is reliably around.',
       },
       headstaff: {
-        targets: { ticketsHandled: 20, activeDays: 20, inGameActivity: 200, channelBreadth: 10, modActions: 15, responseSpeed: 15, staffPresence: 90,  publicActivity: 200 },
+        targets: {
+        ticketsHandled: 18,
+        activeDays: 20,
+        inGameActivity: 190,
+        channelBreadth: 10,
+        modActions: 16,
+        responseSpeed: 18,
+        staffPresence: 95,
+        publicActivity: 200,
+      },
         weights: { ticketsHandled: 25, activeDays: 18, inGameActivity: 16,  channelBreadth: 6,  modActions: 13, responseSpeed: 12, staffPresence: 8,   publicActivity: 2 },
         expects: 'Everything Staff does, plus being the one newer staff ask.',
       },
       mod: {
-        targets: { ticketsHandled: 15, activeDays: 20, inGameActivity: 150, channelBreadth: 10, modActions: 20, responseSpeed: 15, staffPresence: 120, publicActivity: 150 },
+        targets: {
+        ticketsHandled: 16,
+        activeDays: 22,
+        inGameActivity: 200,
+        channelBreadth: 12,
+        modActions: 22,
+        responseSpeed: 15,
+        staffPresence: 135,
+        publicActivity: 180,
+      },
         weights: { ticketsHandled: 18, activeDays: 16, inGameActivity: 14,  channelBreadth: 6,  modActions: 18, responseSpeed: 12, staffPresence: 14,  publicActivity: 2 },
         expects: 'Makes the calls other staff escalate, and is present for them.',
       },
       headmod: {
-        targets: { ticketsHandled: 10, activeDays: 20, inGameActivity: 120, channelBreadth: 12, modActions: 20, responseSpeed: 15, staffPresence: 150, publicActivity: 120 },
+        targets: {
+        ticketsHandled: 14,
+        activeDays: 24,
+        inGameActivity: 210,
+        channelBreadth: 14,
+        modActions: 28,
+        responseSpeed: 12,
+        staffPresence: 185,
+        publicActivity: 160,
+      },
         weights: { ticketsHandled: 12, activeDays: 15, inGameActivity: 12,  channelBreadth: 6,  modActions: 16, responseSpeed: 10, staffPresence: 27,  publicActivity: 2 },
         expects: 'Runs the team. Ticket volume is the least of it.',
+      },
+      manager: {
+        targets: {
+          ticketsHandled: 12,
+          activeDays: 26,
+          inGameActivity: 220,
+          channelBreadth: 16,
+          modActions: 34,
+          responseSpeed: 10,
+          staffPresence: 235,
+          publicActivity: 150,
+        },
+        weights: {
+          ticketsHandled: 10,
+          activeDays: 15,
+          inGameActivity: 10,
+          channelBreadth: 6,
+          modActions: 16,
+          responseSpeed: 10,
+          staffPresence: 31,
+          publicActivity: 2,
+        },
+        expects: 'Runs the staff team. Judged on the team being covered and calm, not on personal ticket count.',
       },
     },
 

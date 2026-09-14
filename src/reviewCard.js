@@ -18,7 +18,17 @@ function buildReviewCard(guild, staffRow, user, { midpoint = false } = {}) {
   const to = Date.now();
 
   const metrics = db.getMetrics(guild.id, staffRow.user_id, from, to);
-  const raw = computeScore(metrics);
+
+  // A promotion trial is somebody proving they can hold the rank they are
+  // already wearing, so it is scored against THAT rank's targets. A hire trial
+  // has no rank to be measured against yet and uses the flat ones.
+  const promotion = staffRow.trial_kind === 'promotion';
+  const windowDays = Math.max(1, Math.round((to - from) / 86400000));
+  const profile = promotion
+    ? require('./standing').scaledProfile(staffRow.rank_key, windowDays)
+    : null;
+
+  const raw = computeScore(metrics, profile);
   const { breakdown, skipped } = raw;
   // A trial member can be adjusted too — the same gap exists there.
   const adj = adjustments.apply(raw.score, guild.id, staffRow.user_id);

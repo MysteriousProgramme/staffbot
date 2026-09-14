@@ -257,13 +257,24 @@ async function decide(interaction, actor, passed) {
 
   const currentIdx = R.memberRankIndex(target);
   const explicit = interaction.options.getString('rank');
-  const destIdx = passed
-    ? explicit
-      ? R.indexOfKey(explicit)
-      : Math.max(currentIdx, 0) + 1
-    : -1;
 
-  if (passed) {
+  // A promotion trial is somebody already wearing the rank while they prove
+  // they can hold it. So the two outcomes are not promote/remove like a hire
+  // trial — they are keep, or go back where you came from.
+  const promotion = row.trial_kind === 'promotion' && row.trial_from_rank;
+  const backTo = promotion ? R.indexOfKey(row.trial_from_rank) : -1;
+
+  const destIdx = passed
+    ? promotion
+      ? currentIdx
+      : explicit
+        ? R.indexOfKey(explicit)
+        : Math.max(currentIdx, 0) + 1
+    : promotion
+      ? backTo
+      : -1;
+
+  if (passed && !promotion) {
     if (destIdx >= R.ranks.length) {
       return err(interaction, `**${user.username}** is already at the top of the ladder.`);
     }
@@ -272,7 +283,21 @@ async function decide(interaction, actor, passed) {
     }
   }
 
-  const blocked = R.checkActionAllowed(actor, target, passed ? destIdx : null);
+  if (passed && promotion && explicit) {
+    return err(
+      interaction,
+      `**${user.username}** is on a probation for ${R.ranks[currentIdx]?.name ?? 'their rank'} — passing confirms that rank. Use /promote to move them somewhere else.`
+    );
+  }
+
+  if (!passed && promotion && backTo < 0) {
+    return err(
+      interaction,
+      `Their probation records a previous rank of "${row.trial_from_rank}", which is not on the ladder any more. Use /demote to place them by hand.`
+    );
+  }
+
+  const blocked = R.checkActionAllowed(actor, target, destIdx >= 0 ? destIdx : null);
   if (blocked) return err(interaction, blocked);
 
   // Built BEFORE the rank changes, so it measures the trial that just ended
@@ -293,10 +318,11 @@ async function decide(interaction, actor, passed) {
 
   if (to) {
     db.setRank(interaction.guildId, user.id, to.key, actor.id);
-    db.clearTrial(interaction.guildId, user.id, 'passed');
+    db.clearTrial(interaction.guildId, user.id, passed ? 'passed' : 'failed');
   } else {
-    // The staff row goes, so the outcome survives in the audit trail rather
-    // than on a record that no longer exists.
+    // Only a failed HIRE trial ends with nobody there. The staff row goes, so
+    // the outcome survives in the audit trail rather than on a record that no
+    // longer exists.
     db.clearTrial(interaction.guildId, user.id, 'failed');
     db.removeStaff(interaction.guildId, user.id);
   }
@@ -322,6 +348,7 @@ async function decide(interaction, actor, passed) {
         iconURL: user.displayAvatarURL(),
       })
       .setDescription(`**${from}** → **${to?.name ?? 'removed from the team'}**`)
+      .setFooter({ text: promotion ? 'Promotion probation' : 'Hire trial' })
       .addFields(
         { name: 'Score', value: `${score}/100 · ${v?.label ?? '—'}`, inline: true },
         { name: 'Decided by', value: `<@${actor.id}>`, inline: true },
@@ -331,7 +358,7 @@ async function decide(interaction, actor, passed) {
       .setTimestamp()
   );
 
-  const announceKey = passed ? 'onPromote' : 'onRemove';
+  const announceKey = passed ? 'onPromote' : promotion ? 'onDemote' : 'onRemove';
   if (config.announcements?.[announceKey]) {
     await announce(
       interaction.guild,
@@ -343,7 +370,7 @@ async function decide(interaction, actor, passed) {
         fromRank: currentIdx >= 0 ? R.ranks[currentIdx] : null,
         toRank: to,
         note: publicNote,
-        kind: passed ? 'promote' : 'remove',
+        kind: passed ? 'promote' : promotion ? 'demote' : 'remove',
         color,
       })
     );
@@ -355,8 +382,10 @@ async function decide(interaction, actor, passed) {
         .setColor(color)
         .setTitle(
           passed
-            ? `You passed your trial in ${interaction.guild.name}`
-            : `Your trial in ${interaction.guild.name} has ended`
+            ? promotion
+              ? `You are confirmed as ${to.name} in ${interaction.guild.name}`
+              : `You passed your trial in ${interaction.guild.name}`
+            : `Your ${promotion ? 'probation' : 'trial'} in ${interaction.guild.name} has ended`
         )
         .setDescription(`**${from}** → **${to?.name ?? 'no longer on the staff team'}**\n\n${reason}`),
     ],
@@ -365,8 +394,12 @@ async function decide(interaction, actor, passed) {
   return receipt(
     interaction,
     passed
-      ? `**${user.username}**: ${from} → **${to.name}** · scored ${score}/100 (${v?.label ?? '—'})`
-      : `**${user.username}** failed their trial and is off the team · scored ${score}/100 (${v?.label ?? '—'})`,
+      ? promotion
+        ? `**${user.username}** confirmed as **${to.name}** · scored ${score}/100 (${v?.label ?? '—'})`
+        : `**${user.username}**: ${from} → **${to.name}** · scored ${score}/100 (${v?.label ?? '—'})`
+      : promotion
+        ? `**${user.username}** did not hold **${from}** — back to **${to.name}** · scored ${score}/100 (${v?.label ?? '—'})`
+        : `**${user.username}** failed their trial and is off the team · scored ${score}/100 (${v?.label ?? '—'})`,
     { announced: Boolean(config.announcements?.[announceKey]) }
   );
 }
