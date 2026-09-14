@@ -16,20 +16,25 @@ The bot never promotes anyone by itself. It gives you the answer and the reasoni
 ## Your ladder
 
 ```
-Trial Staff  →  Staff  →  Head Staff  →  Mod  →  Head Mod
+Trial Staff  →  Staff  →  Head Staff  →  Mod  →  Head Mod  →  Manager
+                                          └── 14-day probation ──┘
 ```
+
+**Promotions into Head Mod and Manager are probationary.** The person gets the rank and its permissions on day one — the only way to show they can do the job — and has 14 days to hold it. `/trial pass` confirms them; `/trial fail` puts them back to the rank they came from, *not* off the team. Set it per destination rank in `trial.promotionTrials`, or delete a line to make that promotion immediate.
 
 Who can do what, out of the box:
 
-| | Trial | Staff | Head Staff | Mod | Head Mod | Owner / Founder / Co-Owner |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Every command | | | | | ✅ | ✅ |
+| | Trial | Staff | Head Staff | Mod | Head Mod | Manager | Owner / Founder |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Every command | | | | | ✅ | ✅ | ✅ |
 
 **Every command is Head Mod and above.** Ranks below Head Mod still hold their roles and are still measured by the bot — they just can't run anything.
 
 On top of that there's one hard rule the code enforces everywhere: **you can never act on someone at or above your own rank, and you can never place someone at your own rank.** So a Head Mod can promote people up to Mod, and only an override role can make someone a Head Mod.
 
-Your Owner / Founder / Co-Owner role IDs go in `permissions.overrideRoleIds` and bypass all of it — **except each other.** All three sit at the same ceiling, so an Owner cannot demote the Founder and vice versa. Only the Discord server owner is above everyone.
+Your Owner and Founder role IDs go in `permissions.overrideRoleIds` and bypass all of it — **except each other.** Both sit at the same ceiling, so an Owner cannot demote the Founder and vice versa. Only the Discord server owner is above everyone.
+
+**Manager is a ladder rank, not an override.** A role that both outranks everyone *and* sits on the ladder could promote and demote its own peers, which is the one thing the rank rules exist to prevent.
 
 **Leadership isn't measured.** If you hold an override role *and* a rank role for the colour, `trackOverrides: false` (the default) keeps you out of the tracked set entirely — no scorecard, no `/link` nag, no effect on staffing counts. You still outrank everyone. Set it to `true` if you genuinely want owners scored.
 
@@ -59,7 +64,7 @@ Node 18, 20, 22 and 24 all work. Avoid odd-numbered releases (21, 23, 25) — th
 
 ### 3. Move the bot's role up
 
-**Server Settings → Roles**, drag the bot's role **above all five rank roles**. Discord won't let a bot assign a role sitting above its own. This is the number one reason people see "Missing Permissions".
+**Server Settings → Roles**, drag the bot's role **above every rank role**. Discord won't let a bot assign a role sitting above its own. This is the number one reason people see "Missing Permissions".
 
 ### 4. Fill in your details
 
@@ -69,7 +74,7 @@ Make a **copy** of `.env.example` and rename the copy to exactly `.env`, then fi
 
 You need:
 
-- role IDs for the five ranks + your Staff Team ping role
+- role IDs for the six ranks + your Staff Team ping role
 - a staff-log channel and a reviews channel
 - your public staff-movements channel
 - your in-game chat bridge channel
