@@ -26,6 +26,7 @@
       <button data-tab="overview" class="on">Overview</button>
       <button data-tab="staff">Staff</button>
       <button data-tab="tickets">Tickets</button>
+      <button data-tab="boards">Leaderboards</button>
       <button data-tab="config">Settings</button>
     </nav>
     <div class="status" id="botstatus"></div>
@@ -79,6 +80,22 @@
           <select id="panel-channel"></select>
           <button id="panel-post">Post panel</button>
         </div>
+      </div>
+    </section>
+
+    <section id="tab-boards" class="tab">
+      <div class="boardhead">
+        <div class="segmented" id="board-tabs"></div>
+        <select id="board-days">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+      <div class="card">
+        <p class="dim" id="board-note"></p>
+        <div id="board-body"></div>
       </div>
     </section>
 

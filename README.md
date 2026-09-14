@@ -203,7 +203,24 @@ Four tabs:
 - **Overview** — open tickets, what is unclaimed, trials about to end, who is on leave.
 - **Staff** — the roster, and for anyone on it: their score, every metric as a bar against its target (weakest first), vouches, notes, rank history. Promote, demote, start or end a trial, vouch, log a note.
 - **Tickets** — every open ticket with its age, priority and claimer. Claim, close, re-prioritise. Manage the blacklist. Post the panel.
+- **Leaderboards** — one board per rank, plus a combined one for the whole team.
 - **Settings** — the config, as a form.
+
+### Why the combined board scales scores
+
+A score is always "percent of your own rank's targets". That is the right way to measure effort against expectation, and a terrible way to build a leaderboard: whoever has the softest targets wins, and somebody clearing a hard bar at 84 sits below somebody clearing an easy one at 90.
+
+So each rank carries a weight, and the combined board multiplies by it. The raw score stays visible next to the scaled one, so nothing has to be taken on faith.
+
+The weights are **derived from your own targets**, not a hand-written table — change a target and the weight moves with it:
+
+```bash
+node -e "console.log(require('./src/rankWeight').weights())"
+```
+
+The number must rise with every rung. If it does not, a junior rank is harder than a senior one, and the board will say so. Override any of them with `standing.rankWeights` in config.js.
+
+Per-rank boards are **not** scaled. Everyone on one is already measured against the same targets, so scaling would distort a comparison that was already fair.
 
 It is the same code underneath, not a second implementation: the score on the website is `computeScore` and the promote button is `applyRank`, so the page and the embeds cannot disagree.
 

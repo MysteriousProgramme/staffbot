@@ -218,6 +218,31 @@ async function req(path, { method = 'GET', body, headers = {}, useCookie = true 
   check('and unblocked', blDel.status === 200 && !db.isTicketBlacklisted(G, '999888777666555444'));
 
   console.log('\nStatic');
+  console.log('\nLeaderboards');
+  const boards = await req('/api/leaderboards?days=30');
+  check('there is a board per rank plus the combined one',
+    boards.json.boards.length === R.ranks.length + 1,
+    boards.json.boards.map((b) => b.key).join(','));
+
+  check('the combined board is the normalised one',
+    boards.json.boards.at(-1).key === 'team' && boards.json.boards.at(-1).normalised === true);
+
+  // Everyone on a single-rank board is already measured against the same
+  // targets, so scaling those would distort a comparison that was fair.
+  check('per-rank boards are left unnormalised',
+    boards.json.boards.slice(0, -1).every((b) => b.normalised === false));
+
+  check('rank difficulty rises with every rung',
+    R.ranks.every((r, i) => i === 0 || boards.json.weights[r.key] >= boards.json.weights[R.ranks[i - 1].key]),
+    JSON.stringify(boards.json.weights));
+
+  check('the top of the ladder is the hardest rank',
+    boards.json.weights[R.ranks[R.ranks.length - 1].key] === 1,
+    JSON.stringify(boards.json.weights));
+
+  check('a weighted score never exceeds the raw one',
+    boards.json.boards[boards.json.boards.length - 1].rows.every((r) => r.weighted <= r.score));
+
   const page = await req('/');
   check('the page is served', page.status === 200);
   const js = await req('/app.js');

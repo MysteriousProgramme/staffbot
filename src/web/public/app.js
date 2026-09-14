@@ -146,6 +146,8 @@ const state = {
   channels: [],
   config: null,
   configEdits: {},
+  board: null,
+  boardDays: 30,
 };
 
 // ---------------------------------------------------------------
@@ -667,10 +669,67 @@ async function renderConfig() {
 // Chrome
 // ---------------------------------------------------------------
 
+// ---------------------------------------------------------------
+// Leaderboards
+// ---------------------------------------------------------------
+
+function boardRow(r, i, normalised) {
+  const shown = normalised ? r.weighted : r.score;
+  const bar = el('div.bar', {}, el('i.' + scoreClass(shown), {}));
+  bar.firstChild.style.width = Math.max(2, Math.min(100, shown)) + '%';
+
+  const sub = [r.rankName, r.onTrial ? (r.trialKind === 'promotion' ? 'on probation' : 'on trial') : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  return el('div.rank-row' + (i < 3 ? '.top' + (i + 1) : ''),
+    { onclick: () => { selectTab('staff'); openStaff(r.id); } },
+    el('span.pos', { text: i + 1 }),
+    avatar(r),
+    el('div.who', {}, el('div.nm', { text: r.name }), el('div.sub', { text: sub })),
+    el('div.meter', {}, bar),
+    // On the combined board the raw score still shows, so nobody has to take
+    // the weighting on faith — you can see what it did to their number.
+    normalised ? el('span.raw', { text: r.score }) : null,
+    el('span.num ' + scoreClass(shown), { text: shown })
+  );
+}
+
+async function renderBoards() {
+  const data = await api('/leaderboards?days=' + state.boardDays);
+  state.boardDays = data.days;
+
+  if (!state.board || !data.boards.some((b) => b.key === state.board)) {
+    state.board = 'team';
+  }
+
+  const tabs = clear($('board-tabs'));
+  for (const b of data.boards) {
+    const btn = el('button' + (b.key === state.board ? '.on' : ''), {
+      onclick: () => { state.board = b.key; run(renderBoards)(); },
+    }, b.name, el('span.n', { text: b.rows.length }));
+    tabs.append(btn);
+  }
+
+  const board = data.boards.find((b) => b.key === state.board);
+  const body = clear($('board-body'));
+
+  $('board-note').textContent = board.normalised
+    ? 'Every score scaled by how demanding its rank is, so a harder bar cleared at 80 outranks an easier one at 90. The grey number is the unscaled score.'
+    : `Everyone here is measured against the same targets, so these are raw scores. This rank counts ${board.weight} against the hardest one.`;
+
+  if (!board.rows.length) {
+    return body.append(el('p.empty', { text: 'Nobody holds this rank yet.' }));
+  }
+
+  board.rows.forEach((r, i) => body.append(boardRow(r, i, board.normalised)));
+}
+
 const RENDER = {
   overview: renderOverview,
   staff: renderStaff,
   tickets: renderTickets,
+  boards: renderBoards,
   config: renderConfig,
 };
 
@@ -720,6 +779,11 @@ $('login-form').addEventListener('submit', async (e) => {
     errBox.hidden = false;
   }
 });
+
+$('board-days').addEventListener('change', run(async () => {
+  state.boardDays = Number($('board-days').value);
+  await renderBoards();
+}));
 
 $('tabs').addEventListener('click', (e) => {
   const tab = e.target.dataset?.tab;

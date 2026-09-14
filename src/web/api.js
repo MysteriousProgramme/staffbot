@@ -10,6 +10,7 @@ const ticketPanel = require('../ticketPanel');
 const standing = require('../standing');
 const team = require('../team');
 const adjustments = require('../adjustments');
+const rankWeight = require('../rankWeight');
 const { computeScore, summariseVouches, verdict } = require('../scoring');
 const { buildMovement } = require('../movement');
 const { logAction, announce, tryDM } = require('../util');
@@ -134,6 +135,74 @@ async function ticketList(guild) {
   // Unclaimed first, then oldest — the order you actually want to work them in.
   out.sort((a, b) => (a.claimedBy ? 1 : 0) - (b.claimedBy ? 1 : 0) || a.openedAt - b.openedAt);
   return out;
+}
+
+/**
+ * One board per rank, plus a combined one.
+ *
+ * A per-rank board needs no normalising — everyone on it is measured against
+ * the same targets already, so the raw score is the fair comparison.
+ *
+ * The combined board does. A score is "percent of your own rank's bar", so
+ * without a correction the softest bar wins and a Mod clearing a hard one at
+ * 84 sits below a Head Staff clearing an easy one at 90. Each score is scaled
+ * by how demanding its rank is, derived from the targets themselves.
+ */
+async function leaderboards(guild, days) {
+  const to = Date.now();
+  const from = to - days * DAY;
+
+  const rows = team.leaderboard(guild.id, from, to);
+  const weights = rankWeight.weights();
+
+  const enriched = await Promise.all(
+    rows.map(async (r) => {
+      const staffRow = db.getStaff(guild.id, r.userId);
+      const trial = onTrial(staffRow);
+      const rankKey = trial ? 'trial' : r.rankKey;
+      return {
+        ...r,
+        ...(await person(guild, r.userId)),
+        rankKey,
+        rankName: trial ? 'Trial Staff' : r.rankName,
+        onTrial: trial,
+        trialKind: staffRow?.trial_kind ?? null,
+        score: Math.round(r.score),
+        weighted: rankWeight.boardScore(r.score, rankKey),
+        weakest: r.weakest?.label ?? null,
+      };
+    })
+  );
+
+  const byScore = (a, b) => b.score - a.score;
+  const byWeighted = (a, b) => b.weighted - a.weighted;
+
+  // A board per rung, in ladder order, even when empty — an empty Manager
+  // board is information, not a reason to hide the tab.
+  const perRank = R.ranks.map((rank) => ({
+    key: rank.key,
+    name: rank.name,
+    weight: Number((weights[rank.key] ?? 1).toFixed(3)),
+    normalised: false,
+    rows: enriched.filter((r) => r.rankKey === rank.key).sort(byScore),
+  }));
+
+  return {
+    days,
+    weights: Object.fromEntries(
+      Object.entries(weights).map(([k, v]) => [k, Number(v.toFixed(3))])
+    ),
+    boards: [
+      ...perRank,
+      {
+        key: 'team',
+        name: 'Staff Team',
+        weight: null,
+        normalised: true,
+        rows: [...enriched].sort(byWeighted),
+      },
+    ],
+  };
 }
 
 async function overview(client, guild) {
@@ -506,16 +575,9 @@ async function route({ client, method, path: p, query, body }) {
       };
     }
 
-    if (p === '/leaderboard') {
+    if (p === '/leaderboard' || p === '/leaderboards') {
       const days = Math.min(365, Math.max(1, Number(query.get('days')) || 30));
-      const to = Date.now();
-      const rows = team.leaderboard(guild.id, to - days * DAY, to);
-      return {
-        days,
-        rows: await Promise.all(
-          rows.map(async (r) => ({ ...r, ...(await person(guild, r.userId)) }))
-        ),
-      };
+      return await leaderboards(guild, days);
     }
 
     if (p === '/config') return configView();
