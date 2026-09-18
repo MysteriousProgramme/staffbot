@@ -782,6 +782,8 @@ A bot that auto-promotes will eventually promote whoever reverse-engineers the f
 
 **Ticket metrics stay at 0** — with the native system, check `tickets.enabled` is true and that you have actually closed a ticket; credit is paid at close, not at open. Nobody is credited if no staff member claimed it *and* nobody cleared `minMessagesToCredit`. Still on Ticket King? Staffbot can't see inside the channels — add its role to Ticket King's support roles, or grant View Channel + Read Message History on the category, and check `ticketKing.categoryIds` points at the CATEGORY, not a channel.
 
+**"You already have a ticket open" but they cannot find it, and the dashboard shows none** — a row the retired Ticket King watcher left open. Those are invisible to the dashboard but used to count against the open-ticket limit, locking their opener out for good. Fixed: the limit only counts Staffbot's own tickets, and stranded rows are closed on startup. The log says how many it swept.
+
 **Closing a ticket loses the conversation** — `tickets.logChannelId` is not set, so there is nowhere to put the transcript. Set it, or set `deleteDelaySeconds: null` to keep the channels instead.
 
 **`/ticket priority` says it could not rename the channel** — Discord limits channel renames to roughly twice per 10 minutes. The priority itself is saved; the name catches up next time.

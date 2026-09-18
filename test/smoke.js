@@ -1784,6 +1784,44 @@ check('ticket numbers are never reused', () => {
   );
 });
 
+// ---- rows the retired watcher left behind ----
+
+check('a leftover Ticket King row does not lock its opener out', () => {
+  // This shipped as a real bug. The gate counted every open row; the
+  // dashboard and reconcile() only ever saw native ones. So a row the
+  // retired watcher left open was invisible everywhere AND permanently
+  // stopped whoever opened it from raising a ticket, with no way to find
+  // out why.
+  db.noteTicketOpened({ guildId: TG, channelId: 'tk-stale', openerId: 'member-tk', openedAt: Date.now() - 5000 });
+  assert.strictEqual(db.getTicket('tk-stale').source, 'ticketking');
+
+  const saved = { cd: TCFG.cooldownSeconds, max: TCFG.maxOpenPerUser };
+  TCFG.cooldownSeconds = 0;
+  TCFG.maxOpenPerUser = 1;
+  const reason = tickets.openBlockedReason({ id: TG }, 'member-tk');
+  Object.assign(TCFG, { cooldownSeconds: saved.cd, maxOpenPerUser: saved.max });
+
+  assert.strictEqual(reason, null, reason);
+});
+
+check('the sweep closes stranded legacy rows and leaves native ones alone', () => {
+  const n = db.nextTicketNumber(TG);
+  db.createTicket({ guildId: TG, channelId: 'nat-live', openerId: 'member-nat', number: n, typeKey: 'support' });
+
+  assert.ok(db.countStrandedLegacyTickets(TG) >= 1);
+  assert.ok(db.closeStrandedLegacyTickets(TG) >= 1);
+
+  assert.strictEqual(db.countStrandedLegacyTickets(TG), 0);
+  assert.strictEqual(db.getTicket('tk-stale').state, 'closed');
+  assert.strictEqual(db.getTicket('nat-live').state, 'open', 'the sweep ate a live ticket');
+});
+
+check('the sweep credits nobody', () => {
+  // Those tickets were never credited when they happened. Paying them out
+  // now would drop months of old work into a current scoring window.
+  assert.strictEqual(db.getTicket('tk-stale').credited_to, null);
+});
+
 // ---- the open gate ----
 
 check('a fresh member is allowed to open a ticket', () => {

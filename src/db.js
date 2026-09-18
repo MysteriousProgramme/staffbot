@@ -393,11 +393,30 @@ const stmts = {
       (@guild_id, @channel_id, @channel_name, @opener_id, @opened_at, @opened_at,
        @number, @type_key, @subject, @priority, 'native')
   `),
+  // Both of these gate whether somebody may open a ticket, so both have to
+  // count the same rows the rest of the system can see — native ones. A
+  // leftover row from the old Ticket King watcher is invisible to the
+  // dashboard and to reconcile(), and counting it here locked its opener out
+  // of the ticket system permanently with no way to find out why.
   countOpenBy: db.prepare(
-    `SELECT COUNT(*) AS n FROM tickets WHERE guild_id = ? AND opener_id = ? AND state = 'open'`
+    `SELECT COUNT(*) AS n FROM tickets
+     WHERE guild_id = ? AND opener_id = ? AND state = 'open' AND source = 'native'`
   ),
   lastOpenedBy: db.prepare(
-    'SELECT MAX(opened_at) AS at FROM tickets WHERE guild_id = ? AND opener_id = ?'
+    `SELECT MAX(opened_at) AS at FROM tickets
+     WHERE guild_id = ? AND opener_id = ? AND source = 'native'`
+  ),
+
+  // Rows the retired watcher left behind. Closed without crediting anyone:
+  // they were never credited at the time, and paying them out now would put
+  // months of old work into a current scoring window.
+  strandedLegacy: db.prepare(
+    `SELECT COUNT(*) AS n FROM tickets
+     WHERE guild_id = ? AND state = 'open' AND source != 'native'`
+  ),
+  closeStrandedLegacy: db.prepare(
+    `UPDATE tickets SET state = 'closed', closed_at = ?, close_reason = 'Ticket King watcher retired'
+     WHERE guild_id = ? AND state = 'open' AND source != 'native'`
   ),
   clearClaim: db.prepare(
     'UPDATE tickets SET claimed_by = NULL, claimed_at = NULL WHERE channel_id = ?'
@@ -713,6 +732,9 @@ module.exports = {
   countOpenTicketsBy: (g, u) => stmts.countOpenBy.get(g, u).n,
   lastTicketOpenedAt: (g, u) => stmts.lastOpenedBy.get(g, u).at ?? 0,
   listOpenNativeTickets: (g) => stmts.listOpenNative.all(g),
+
+  countStrandedLegacyTickets: (g) => stmts.strandedLegacy.get(g).n,
+  closeStrandedLegacyTickets: (g) => stmts.closeStrandedLegacy.run(now(), g).changes,
 
   clearClaim: (channelId) => stmts.clearClaim.run(channelId),
   setTicketPriority: (channelId, priority) => stmts.setPriority.run(priority, channelId),

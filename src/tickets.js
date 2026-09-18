@@ -874,6 +874,22 @@ async function reconcile(client) {
     }
   }
 
+  // Anything the old watcher left open can never be settled now that it is
+  // switched off — its own reconcile returns early — and every one of those
+  // rows silently locks its opener out of the ticket system.
+  let stranded = 0;
+  if (!config.ticketKing?.enabled) {
+    for (const guild of client.guilds.cache.values()) {
+      stranded += db.closeStrandedLegacyTickets(guild.id);
+    }
+    if (stranded) {
+      console.log(
+        `[tickets] closed ${stranded} ticket(s) the retired Ticket King watcher left open · ` +
+          'their openers can raise tickets again'
+      );
+    }
+  }
+
   const anyGuild = client.guilds.cache.first();
   const open = anyGuild ? db.listOpenNativeTickets(anyGuild.id).length : 0;
   console.log(
