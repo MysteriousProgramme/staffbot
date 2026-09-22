@@ -115,7 +115,13 @@ fi
 if [ -z "$PASSWORD" ]; then
   # Letters and digits only. The password crosses a .env file, a YAML file and a
   # shell, and every symbol worth having is special in at least one of them.
-  PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+  #
+  # Not `tr -dc ... </dev/urandom | head -c 32`: head closes the pipe once it has
+  # its 32 bytes, tr dies of SIGPIPE, and pipefail reports the whole pipeline as
+  # failed. Under set -e that ends the run here, silently, having printed the
+  # step heading and nothing else. openssl needs no pipeline and gives exactly
+  # 32 hex characters.
+  PASSWORD="$(openssl rand -hex 16)"
   note "generated a new password"
 else
   note "reusing the password already in .env"
