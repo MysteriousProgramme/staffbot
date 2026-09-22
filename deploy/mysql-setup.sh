@@ -17,7 +17,17 @@
 #
 # Run it on the EC2 box:
 #
-#   bash deploy/mysql-setup.sh [game-server-ip]
+#   bash deploy/mysql-setup.sh [host ...]
+#
+# The hosts are what the GAME SERVER CONNECTS FROM, which is not the address
+# players use. RaveNodes answers Minecraft on 51.79.226.135 and makes outbound
+# connections from as-sg-01.ravenodes.com (15.235.204.138) — a different machine
+# in a different range, so a grant for the player-facing address matches nothing
+# and the connection is refused with no hint as to why.
+#
+# Pass both the IP and the name when you know them. MySQL resolves the client
+# address before matching accounts, and which of the two it matches on depends
+# on whether reverse DNS answers, which is not worth depending on.
 #
 # Safe to run twice. It will not overwrite an existing database, and it rotates
 # the password on a re-run only if you pass --new-password.
@@ -28,19 +38,22 @@ DB_NAME="tempest"
 DB_USER="tempest"
 ENV_FILE="$HOME/staffbot/.env"
 NEW_PASSWORD=0
-GAME_IP=""
+GAME_HOSTS=()
 
-# Parsed rather than positional: reading $1 as the IP meant --new-password became
-# the game server's address, and the grant was created for a host called
+# Parsed rather than positional: reading $1 as the host meant --new-password
+# became the game server's address, and the grant was created for a host called
 # "--new-password" without complaint.
 for arg in "$@"; do
   case "$arg" in
     --new-password) NEW_PASSWORD=1 ;;
     -*) echo "unknown option: $arg" >&2; exit 1 ;;
-    *) GAME_IP="$arg" ;;
+    *) GAME_HOSTS+=("$arg") ;;
   esac
 done
-GAME_IP="${GAME_IP:-51.79.226.135}"
+
+if [ ${#GAME_HOSTS[@]} -eq 0 ]; then
+  GAME_HOSTS=(15.235.204.138 as-sg-01.ravenodes.com)
+fi
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -150,16 +163,17 @@ CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`
 -- plugin's is pinned to its address, so a leaked password is not usable from
 -- anywhere else even if the security group is later widened.
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' ${AUTH};
-CREATE USER IF NOT EXISTS '${DB_USER}'@'${GAME_IP}' ${AUTH};
 ALTER USER '${DB_USER}'@'localhost' ${AUTH};
-ALTER USER '${DB_USER}'@'${GAME_IP}' ${AUTH};
-
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
-GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'${GAME_IP}';
+$(for h in "${GAME_HOSTS[@]}"; do
+  echo "CREATE USER IF NOT EXISTS '${DB_USER}'@'${h}' ${AUTH};"
+  echo "ALTER USER '${DB_USER}'@'${h}' ${AUTH};"
+  echo "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'${h}';"
+done)
 FLUSH PRIVILEGES;
 SQL
 
-note "database ${DB_NAME}, user ${DB_USER} from localhost and ${GAME_IP}"
+note "database ${DB_NAME}, user ${DB_USER} from localhost and ${GAME_HOSTS[*]}"
 
 # ---------------------------------------------------------------------------
 say "4. Pointing the bot at it"
@@ -204,7 +218,7 @@ cat <<DETAILS
 
   1. AWS console -> EC2 -> Instances -> your instance -> Security tab ->
      the security group -> Inbound rules -> Edit -> Add rule:
-       Type MySQL/Aurora, Port 3306, Source Custom, ${GAME_IP}/32
+       Type MySQL/Aurora, Port 3306, Source Custom, ${GAME_HOSTS[0]}/32
      Nothing else. Do NOT use 0.0.0.0/0 — that publishes the database.
 
   2. Put the details above into the plugin's database config, restart the
