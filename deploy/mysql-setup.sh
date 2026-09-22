@@ -50,7 +50,19 @@ if command -v mysqld >/dev/null 2>&1; then
 else
   sudo apt-get update -qq
   # noninteractive so the package's own prompts do not block an unattended run.
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-server
+  #
+  # The `|| true` is not carelessness. dpkg reports failure for the whole
+  # transaction if ANY package in it is broken, including one that was already
+  # broken before today and has nothing to do with MySQL — a half-configured
+  # nginx is enough. Under set -e that abandons the run over someone else's
+  # problem, so judge it on whether mysqld actually arrived.
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-server || true
+
+  if ! command -v mysqld >/dev/null 2>&1; then
+    echo "mysql-server did not install. Something else in apt is broken —" >&2
+    echo "run 'sudo dpkg --configure -a' to see what, fix it, then re-run this." >&2
+    exit 1
+  fi
   note "installed"
 fi
 
