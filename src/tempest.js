@@ -48,6 +48,25 @@ function enabled() {
 }
 
 /**
+ * The connection details, environment first.
+ *
+ * config.js is committed to git, so it is the wrong place for any of this — not just the
+ * password. The database is reachable from anywhere ("Connections from: %" on a panel),
+ * which makes the host and username half of a working credential rather than harmless
+ * configuration. Everything here can therefore come from .env, which is not tracked.
+ */
+function credentials() {
+  const s = settings();
+  return {
+    host: process.env.TEMPEST_DB_HOST || s.host || '127.0.0.1',
+    port: Number(process.env.TEMPEST_DB_PORT || s.port || 3306),
+    user: process.env.TEMPEST_DB_USER || s.user || '',
+    database: process.env.TEMPEST_DB_NAME || s.database || '',
+    password: process.env.TEMPEST_DB_PASSWORD || s.password || '',
+  };
+}
+
+/**
  * Lazily builds the connection pool.
  *
  * Loaded with require() only when actually needed, so a bot running without the Minecraft
@@ -62,17 +81,17 @@ function connect() {
     lastError = 'mysql2 is not installed. Run: npm install mysql2';
     return null;
   }
-  const s = settings();
+  const c = credentials();
   pool = mysql.createPool({
-    host: s.host || '127.0.0.1',
-    port: s.port || 3306,
-    user: s.user,
-    password: process.env.TEMPEST_DB_PASSWORD || s.password,
-    database: s.database,
+    host: c.host,
+    port: c.port,
+    user: c.user,
+    password: c.password,
+    database: c.database,
     waitForConnections: true,
-    connectionLimit: s.connectionLimit || 4,
+    connectionLimit: settings().connectionLimit || 4,
     // Keeps a dead connection from hanging an interaction until Discord times it out.
-    connectTimeout: s.connectTimeoutMs || 5000,
+    connectTimeout: settings().connectTimeoutMs || 5000,
   });
   return pool;
 }
@@ -184,6 +203,21 @@ async function linkedAccount(discordId) {
 }
 
 /** Checks the connection, for startup diagnostics. */
+/**
+ * Does a table the bot writes to exist?
+ *
+ * The plugin creates its tables per feature module, so a database can be
+ * perfectly reachable and still be missing the half the bot needs — that is not
+ * a connection fault and should not be reported as one.
+ */
+async function tableExists(name) {
+  const rows = await query(
+    'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1',
+    [name]
+  );
+  return rows.length > 0;
+}
+
 async function check() {
   if (!enabled()) return { ok: false, reason: 'disabled' };
   try {
@@ -202,7 +236,7 @@ async function close() {
 }
 
 module.exports = {
-  enabled, run, redeemLinkCode, linkedAccount, check, close, SEP, SQL, encodeArgs,
+  enabled, credentials, tableExists, run, redeemLinkCode, linkedAccount, check, close, SEP, SQL, encodeArgs,
   // Exposed so roleSync can write its own desired-state rows without a second pool.
   query,
 };

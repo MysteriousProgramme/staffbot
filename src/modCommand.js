@@ -154,8 +154,14 @@ async function finish(interaction, { name, action, args, confirmed }) {
       confirmed
     );
   } catch (e) {
+    // The database being up but missing the table reads as a connection failure
+    // otherwise, which sends people to check the wrong thing entirely.
+    const missing = e.code === 'ER_NO_SUCH_TABLE';
     return interaction.editReply({
-      content: `Could not reach the Minecraft server: ${e.message}`,
+      content: missing
+        ? 'The Minecraft server accepts the connection, but its command bridge is not '
+          + 'turned on — the table these run through does not exist yet. Nothing was done.'
+        : `Could not reach the Minecraft server: ${e.message}`,
       components: [],
     });
   }

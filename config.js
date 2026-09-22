@@ -985,13 +985,22 @@ const config = {
     // The database the PLUGIN uses — not the bot's own SQLite. Must be MySQL or
     // MariaDB: the plugin's SQLite mode keeps its file on the game server, which
     // this bot generally cannot reach.
-    host: '127.0.0.1',
+    // Leave these blank and put them in .env. config.js is committed to git, and the
+    // panel database accepts connections from anywhere, which makes the host and
+    // username half of a working credential rather than harmless configuration:
+    //
+    //   TEMPEST_DB_HOST=sql-XX.yourhost.com
+    //   TEMPEST_DB_PORT=3306
+    //   TEMPEST_DB_USER=uXXX_XXXXXXXX
+    //   TEMPEST_DB_NAME=sXXX_yourdb
+    //   TEMPEST_DB_PASSWORD=...
+    //
+    // Anything set here is only a fallback for when the variable is absent.
+    host: '',
     port: 3306,
-    user: 'tempest',
-    // Prefer the TEMPEST_DB_PASSWORD environment variable over putting it here —
-    // config.js is committed to git.
+    user: '',
     password: '',
-    database: 'tempest',
+    database: '',
 
     connectionLimit: 4,
 

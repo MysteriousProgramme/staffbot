@@ -79,8 +79,15 @@ function groupsFor(member) {
  * "there is work to do" — rewriting an identical row every time anybody edits a nickname
  * would have it re-applying groups all day.
  */
+// Whether tempest_role_sync exists. Null until the startup sweep looks.
+//
+// The plugin only creates this table when its role-sync module is turned on, so a
+// bot pointed at a working database can still have nowhere to write. Without this
+// flag every role change anyone made would log its own identical failure.
+let tableReady = null;
+
 async function push(member) {
-  if (!enabled()) return null;
+  if (!enabled() || tableReady === false) return null;
 
   const groups = groupsFor(member).join(',');
   try {
@@ -112,6 +119,16 @@ async function reconcileAll(guild) {
   const probe = await tempest.check();
   if (!probe.ok) {
     console.error(`[roleSync] skipped: the database is not reachable (${probe.reason})`);
+    return { checked: 0, changed: 0, reachable: false };
+  }
+
+  // Reachable is not the same as ready. Checked here rather than left to the first
+  // write so the reason names the plugin setting to change, instead of surfacing as
+  // a raw "table does not exist" once per member.
+  tableReady = await tempest.tableExists('tempest_role_sync');
+  if (!tableReady) {
+    console.error('[roleSync] skipped: tempest_role_sync does not exist. The plugin creates '
+      + 'it when role sync is enabled on its side — check role-sync in the plugin config.');
     return { checked: 0, changed: 0, reachable: false };
   }
 
