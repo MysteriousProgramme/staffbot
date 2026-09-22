@@ -204,13 +204,13 @@ test('the role-sync table takes a desired-state row', () => {
   // SQLite spells the upsert differently from MySQL, so the shape is what is checked here,
   // not the statement text.
   db.prepare(
-    'INSERT INTO tempest_role_sync (discord_id, groups, updated_at) VALUES (?,?,?)'
+    'INSERT INTO tempest_role_sync (discord_id, group_names, updated_at) VALUES (?,?,?)'
   ).run('123456789012345678', 'booster,media', Date.now());
 
   const row = db
-    .prepare('SELECT groups, applied_at FROM tempest_role_sync WHERE discord_id = ?')
+    .prepare('SELECT group_names, applied_at FROM tempest_role_sync WHERE discord_id = ?')
     .get('123456789012345678');
-  assert.strictEqual(row.groups, 'booster,media');
+  assert.strictEqual(row.group_names, 'booster,media');
   // applied_at defaults behind updated_at, which is how the plugin's sweep finds new work.
   assert.strictEqual(row.applied_at, 0);
 });

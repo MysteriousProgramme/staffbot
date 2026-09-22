@@ -15,18 +15,18 @@
 const config = require('./../config');
 const tempest = require('./tempest');
 
-// `groups` has been a reserved word in MySQL since 8.0.2, so it has to be
-// quoted or both of these are syntax errors — and push() swallows the error
-// into a log line, which means role sync would simply never apply anything and
-// the only symptom would be noise in the console.
+// The column is `group_names`, not `groups`: the latter is reserved in MySQL 8.0.2+,
+// where an unquoted use is a syntax error. Quoting would also work, but only for as
+// long as every future query remembers to — a name that is not reserved cannot be got
+// wrong. The plugin's schema uses the same name.
 //
-// Exported for the same reason tempest.SQL is: so the contract test checks
-// this text rather than a copy of it that can drift.
+// Exported for the same reason tempest.SQL is: so the contract test checks this text
+// rather than a copy of it that can drift.
 const SQL = {
-  upsert: `INSERT INTO tempest_role_sync (discord_id, \`groups\`, updated_at)
+  upsert: `INSERT INTO tempest_role_sync (discord_id, group_names, updated_at)
            VALUES (?,?,?)
-           ON DUPLICATE KEY UPDATE \`groups\` = VALUES(\`groups\`), updated_at = VALUES(updated_at)`,
-  read: 'SELECT \`groups\` FROM tempest_role_sync WHERE discord_id = ?',
+           ON DUPLICATE KEY UPDATE group_names = VALUES(group_names), updated_at = VALUES(updated_at)`,
+  read: 'SELECT group_names FROM tempest_role_sync WHERE discord_id = ?',
 };
 
 function settings() {
@@ -85,7 +85,7 @@ async function push(member) {
   const groups = groupsFor(member).join(',');
   try {
     const rows = await tempest.query(SQL.read, [member.id]);
-    if (rows[0] && rows[0].groups === groups) return null;
+    if (rows[0] && rows[0].group_names === groups) return null;
 
     await tempest.query(SQL.upsert, [member.id, groups, Date.now()]);
     return groups;
@@ -102,7 +102,18 @@ async function push(member) {
  * granted or removed during downtime produces no event to catch up on.
  */
 async function reconcileAll(guild) {
-  if (!enabled()) return { checked: 0, changed: 0 };
+  if (!enabled()) return { checked: 0, changed: 0, reachable: true };
+
+  // One probe before the walk. push() catches its own errors, so without this a
+  // database that is down turns the sweep into one failed connection per member
+  // — sequentially, each eating the full connect timeout. On a server of a few
+  // hundred people that is an hour of startup and a log line for every one of
+  // them, to discover a thing the first attempt already knew.
+  const probe = await tempest.check();
+  if (!probe.ok) {
+    console.error(`[roleSync] skipped: the database is not reachable (${probe.reason})`);
+    return { checked: 0, changed: 0, reachable: false };
+  }
 
   const members = await guild.members.fetch();
   let changed = 0;
@@ -113,7 +124,7 @@ async function reconcileAll(guild) {
     // eslint-disable-next-line no-await-in-loop
     if ((await push(member)) !== null) changed++;
   }
-  return { checked: members.size, changed };
+  return { checked: members.size, changed, reachable: true };
 }
 
 /** Hooks the events, and does one reconcile at startup. */
@@ -146,9 +157,13 @@ function attach(client) {
     for (const guild of client.guilds.cache.values()) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        const { checked, changed } = await reconcileAll(guild);
-        console.log(`[roleSync] ${mappings.length} mapping(s), ${checked} members checked, `
-          + `${changed} updated`);
+        const { checked, changed, reachable } = await reconcileAll(guild);
+        // The skip already said why, so do not follow it with "0 checked" as
+        // though the sweep ran and found nothing to do.
+        if (reachable) {
+          console.log(`[roleSync] ${mappings.length} mapping(s), ${checked} members checked, `
+            + `${changed} updated`);
+        }
       } catch (e) {
         console.error(`[roleSync] startup reconcile failed: ${e.message}`);
       }

@@ -976,9 +976,11 @@ const config = {
   // powers go at the same moment; an unlinked user has none at all.
   // ---------------------------------------------------------------------------
   tempest: {
-    // Off until you fill in the connection below. With it off, the /mc* commands
-    // and `/link code` say so plainly instead of failing oddly.
-    enabled: false,
+    // ON. The connection below is not filled in yet, so every /mc* command and
+    // `/link code` will fail until it is — quickly and with the reason, rather
+    // than hanging. Set enabled:false to go back to the plain 'turned off'
+    // message.
+    enabled: true,
 
     // The database the PLUGIN uses — not the bot's own SQLite. Must be MySQL or
     // MariaDB: the plugin's SQLite mode keeps its file on the game server, which
@@ -992,7 +994,10 @@ const config = {
     database: 'tempest',
 
     connectionLimit: 4,
-    connectTimeoutMs: 5000,
+
+    // Deliberately short. A staff member running /ban wants to be told quickly
+    // that the server is unreachable; five seconds of nothing reads as a hang.
+    connectTimeoutMs: 2000,
 
     // How long to wait for the plugin to answer before giving up. The plugin
     // polls its queue every couple of seconds, so most answers land well inside
@@ -1020,7 +1025,7 @@ const config = {
     // group that does not exist grants nothing, silently.
     // -------------------------------------------------------------------------
     roleSync: {
-      enabled: false,
+      enabled: true,
 
       mappings: [
         { name: 'booster', group: 'booster', roleIds: '' },
