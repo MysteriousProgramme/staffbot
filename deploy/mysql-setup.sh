@@ -24,15 +24,23 @@
 
 set -euo pipefail
 
-GAME_IP="${1:-51.79.226.135}"
 DB_NAME="tempest"
 DB_USER="tempest"
 ENV_FILE="$HOME/staffbot/.env"
 NEW_PASSWORD=0
+GAME_IP=""
 
+# Parsed rather than positional: reading $1 as the IP meant --new-password became
+# the game server's address, and the grant was created for a host called
+# "--new-password" without complaint.
 for arg in "$@"; do
-  [ "$arg" = "--new-password" ] && NEW_PASSWORD=1
+  case "$arg" in
+    --new-password) NEW_PASSWORD=1 ;;
+    -*) echo "unknown option: $arg" >&2; exit 1 ;;
+    *) GAME_IP="$arg" ;;
+  esac
 done
+GAME_IP="${GAME_IP:-51.79.226.135}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -88,9 +96,20 @@ fi
 # ---------------------------------------------------------------------------
 say "3. Database and user"
 
+envValue() {
+  grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d "'\"" || true
+}
+
 PASSWORD=""
 if [ -f "$ENV_FILE" ] && [ "$NEW_PASSWORD" -eq 0 ]; then
-  PASSWORD="$(grep -E '^TEMPEST_DB_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d "'\"" || true)"
+  # Reuse only a password this script set, which is why the host is checked
+  # first. Before the first run .env holds the PREVIOUS database's credentials,
+  # and carrying that password onto a brand new local user hands the new
+  # database the old one's secret — including, as happened here, one that had
+  # already been exposed and was due to be retired with the old host.
+  if [ "$(envValue TEMPEST_DB_HOST)" = "127.0.0.1" ]; then
+    PASSWORD="$(envValue TEMPEST_DB_PASSWORD)"
+  fi
 fi
 
 if [ -z "$PASSWORD" ]; then
