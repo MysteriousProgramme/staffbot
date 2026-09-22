@@ -90,6 +90,20 @@ else
   note "reusing the password already in .env"
 fi
 
+# Tempest Suite connects with MariaDB Connector/J, which handles MySQL 8's
+# default caching_sha2_password badly — it tends to surface as a plain
+# authentication failure, which sends you off checking the password instead.
+# mysql_native_password is deprecated but present in 8.0 and universally
+# understood, so pick it when the server still offers it.
+if sudo mysql -N -B -e "SELECT 1 FROM information_schema.plugins \
+    WHERE plugin_name = 'mysql_native_password' AND plugin_status = 'ACTIVE'" | grep -q 1; then
+  AUTH="IDENTIFIED WITH mysql_native_password BY '${PASSWORD}'"
+  note "using mysql_native_password for the MariaDB driver"
+else
+  AUTH="IDENTIFIED BY '${PASSWORD}'"
+  note "mysql_native_password unavailable — using the server default"
+fi
+
 sudo mysql <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -98,10 +112,10 @@ CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`
 -- on this machine and the plugin on the game server are separate grants. The
 -- plugin's is pinned to its address, so a leaked password is not usable from
 -- anywhere else even if the security group is later widened.
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${PASSWORD}';
-CREATE USER IF NOT EXISTS '${DB_USER}'@'${GAME_IP}' IDENTIFIED BY '${PASSWORD}';
-ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${PASSWORD}';
-ALTER USER '${DB_USER}'@'${GAME_IP}' IDENTIFIED BY '${PASSWORD}';
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' ${AUTH};
+CREATE USER IF NOT EXISTS '${DB_USER}'@'${GAME_IP}' ${AUTH};
+ALTER USER '${DB_USER}'@'localhost' ${AUTH};
+ALTER USER '${DB_USER}'@'${GAME_IP}' ${AUTH};
 
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'${GAME_IP}';
@@ -156,11 +170,15 @@ cat <<DETAILS
        Type MySQL/Aurora, Port 3306, Source Custom, ${GAME_IP}/32
      Nothing else. Do NOT use 0.0.0.0/0 — that publishes the database.
 
-  2. Import the old data, if you exported it from the panel:
+  2. Put the details above into the plugin's database config, restart the
+     Minecraft server, and watch its console. It creates its own tables on
+     first connect, so there is nothing to import unless you have real data
+     to carry over — in which case:
        mysql -u ${DB_USER} -p ${DB_NAME} < ~/tempest-export.sql
 
-  3. Put the details above into the plugin's database config, restart the
-     Minecraft server, and check its console for a connection error.
+  3. Give the server a distinct network.node-id in the plugin config if it
+     ever shared a database with another backend. A node id is claimed in the
+     database, so a duplicate stops the network module enabling.
 
   4. cd ~/staffbot && sudo systemctl restart staffbot && npm run tempest-check
 
