@@ -9,6 +9,7 @@
     "deploy": "node src/deploy-commands.js",
     "test": "node test/smoke.js && node test/trial.js && node test/web.js && node test/tempest-contract.js",
     "check": "node src/check-config.js",
+    "check:mc": "node src/check-tempest.js",
     "invite": "node src/invite.js",
     "test:web": "node test/web.js"
   },
