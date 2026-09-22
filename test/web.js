@@ -55,7 +55,12 @@ const guild = {
   },
   members: { fetch: async (id) => members.get(id) ?? null },
 };
-for (const m of [member('owner-1', 'Owner'), member('staff-1', 'Handler', [R.ranks[0].roleId])]) {
+for (const m of [
+  member('owner-1', 'Owner'),
+  member('staff-1', 'Handler', [R.ranks[0].roleId]),
+  member('climber', 'Climber', [R.ranks[3].roleId]),
+  member('holder', 'Holder', [R.ranks[4].roleId]),
+]) {
   m.guild = guild;
   members.set(m.id, m);
 }
@@ -89,6 +94,15 @@ db.createTicket({
   openerId: 'owner-1', number: 1, typeKey: 'support', subject: 'griefed at spawn',
 });
 db.addTicketBlacklist(G, '111222333444555666', 'spam', 'owner-1');
+
+// Somebody mid-probation: a Head Mod proving they can hold it, NOT a new hire.
+db.setRank(G, 'holder', R.ranks[4].key, 'owner-1');
+db.startTrial(G, 'holder', Date.now() + 14 * 86400000, {
+  kind: 'promotion',
+  fromRank: R.ranks[3].key,
+});
+db.bumpMetric(G, 'holder', 'ticketsHandled', 9);
+db.setRank(G, 'climber', R.ranks[3].key, 'owner-1');
 
 let cookie = '';
 async function req(path, { method = 'GET', body, headers = {}, useCookie = true } = {}) {
@@ -143,8 +157,13 @@ async function req(path, { method = 'GET', body, headers = {}, useCookie = true 
     JSON.stringify(ov.json?.counts));
 
   const staff = await req('/api/staff');
+  // Counts the seeded people rather than a hard-coded number, so adding a
+  // fixture for some other test does not fail this one.
   check('the roster lists staff with a score',
-    staff.status === 200 && staff.json.staff.length === 1 && typeof staff.json.staff[0].score === 'number',
+    staff.status === 200 &&
+      staff.json.staff.length >= 1 &&
+      staff.json.staff.every((s) => typeof s.score === 'number') &&
+      staff.json.staff.some((s) => s.id === 'staff-1'),
     JSON.stringify(staff.json?.staff));
 
   const detail = await req('/api/staff/staff-1');
@@ -242,6 +261,46 @@ async function req(path, { method = 'GET', body, headers = {}, useCookie = true 
 
   check('a weighted score never exceeds the raw one',
     boards.json.boards[boards.json.boards.length - 1].rows.every((r) => r.weighted <= r.score));
+
+  console.log('\nPromotion probation');
+
+  // Shipped broken: any open trial was read as "is a Trial Staff hire", so a
+  // probationary Head Mod was filed under Trial Staff and scaled by the
+  // Trial Staff weight — less than half the rank they were actually holding.
+  const bd = await req('/api/leaderboards?days=30');
+  const probationer = bd.json.boards
+    .find((b) => b.key === 'headmod').rows.find((r) => r.id === 'holder');
+
+  check('a probationary senior stays on their own rank board',
+    Boolean(probationer),
+    'headmod board: ' + JSON.stringify(bd.json.boards.find((b) => b.key === 'headmod').rows.map((r) => r.id)));
+
+  check('and is not filed under Trial Staff',
+    !bd.json.boards.find((b) => b.key === 'trial').rows.some((r) => r.id === 'holder'));
+
+  check('and is weighted as their real rank',
+    probationer && probationer.weighted === Math.round(probationer.score * bd.json.weights.headmod),
+    JSON.stringify(probationer));
+
+  check('the row still reports that a probation is running',
+    probationer && probationer.onTrial === true && probationer.trialKind === 'promotion',
+    JSON.stringify(probationer));
+
+  // The dashboard used to promote into a senior rank with no probation at
+  // all, so the same action gave different results in Discord and here.
+  const promoted = await req('/api/staff/climber/promote', {
+    method: 'POST', headers: H,
+    body: { rank: R.ranks[4].key, reason: 'ready for the step up' },
+  });
+
+  check('the dashboard starts a probation on a senior promotion',
+    promoted.status === 200 && promoted.json.probationDays === config.trial.promotionTrials.headmod,
+    JSON.stringify(promoted.json));
+
+  const climberRow = db.getStaff(G, 'climber');
+  check('and records it as a promotion trial, not a hire',
+    climberRow?.trial_kind === 'promotion' && climberRow?.trial_from_rank === R.ranks[3].key,
+    JSON.stringify(climberRow));
 
   const page = await req('/');
   check('the page is served', page.status === 200);

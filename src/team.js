@@ -3,6 +3,7 @@ const db = require('./db');
 const R = require('./ranks');
 const { computeScore } = require('./scoring');
 const standing = require('./standing');
+const trialState = require('./trialState');
 
 /**
  * Whole-team views. Everything here reads data already being collected —
@@ -22,9 +23,14 @@ function leaderboard(guildId, from, to) {
   const rows = [];
   for (const staff of db.listStaff(guildId)) {
     const metrics = db.getMetrics(guildId, staff.user_id, from, to);
-    const onTrial = ['active', 'midpoint_posted', 'awaiting_review'].includes(staff.trial_state ?? '');
     const windowDays = Math.max(1, Math.round((to - from) / 86400000));
-    const profile = onTrial ? null : standing.scaledProfile(staff.rank_key, windowDays);
+
+    // Always the profile for the rank they hold. For a hire that rank is the
+    // bottom rung, which has no standing profile, so this returns null and
+    // they fall back to the flat targets exactly as before. For a promotion
+    // probation it returns the targets of the rank they are proving — which
+    // is the same bar their review card uses, and used not to be.
+    const profile = standing.scaledProfile(staff.rank_key, windowDays);
     const { score, breakdown } = computeScore(metrics, profile);
     const weakest = breakdown[0]; // computeScore sorts weakest first
     rows.push({
@@ -36,7 +42,8 @@ function leaderboard(guildId, from, to) {
       weakest,
       scoredAgainst: profile ? 'rank' : 'trial',
       onLoa: Boolean(db.activeLoa(guildId, staff.user_id)),
-      onTrial: ['active', 'midpoint_posted', 'awaiting_review'].includes(staff.trial_state ?? ''),
+      onTrial: trialState.isOpen(staff),
+      trialKind: staff.trial_kind ?? null,
     });
   }
   return rows.sort((a, b) => b.score - a.score);

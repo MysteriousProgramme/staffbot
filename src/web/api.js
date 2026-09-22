@@ -11,6 +11,7 @@ const standing = require('../standing');
 const team = require('../team');
 const adjustments = require('../adjustments');
 const rankWeight = require('../rankWeight');
+const trialState = require('../trialState');
 const { computeScore, summariseVouches, verdict } = require('../scoring');
 const { buildMovement } = require('../movement');
 const { logAction, announce, tryDM } = require('../util');
@@ -158,14 +159,17 @@ async function leaderboards(guild, days) {
   const enriched = await Promise.all(
     rows.map(async (r) => {
       const staffRow = db.getStaff(guild.id, r.userId);
-      const trial = onTrial(staffRow);
-      const rankKey = trial ? 'trial' : r.rankKey;
+      // Their actual rank, always. A hire already sits on the bottom rung, so
+      // this reads 'trial' for them without being told; a probationary Head
+      // Mod stays a Head Mod instead of being filed under Trial Staff and
+      // weighted at less than half the rank they are actually holding.
+      const rankKey = trialState.scoringRank(staffRow) ?? r.rankKey;
       return {
         ...r,
         ...(await person(guild, r.userId)),
         rankKey,
-        rankName: trial ? 'Trial Staff' : r.rankName,
-        onTrial: trial,
+        rankName: r.rankName,
+        onTrial: trialState.isOpen(staffRow),
         trialKind: staffRow?.trial_kind ?? null,
         score: Math.round(r.score),
         weighted: rankWeight.boardScore(r.score, rankKey),
@@ -499,7 +503,24 @@ async function changeRank(client, guild, userId, { destinationKey, reason, note,
     db.removeStaff(guild.id, userId);
   }
 
-  db.addAudit(guild.id, actor.id, userId, kind, `${from} → ${to?.name ?? 'removed'}: ${reason}`);
+  // Mirrors commands/promote.js: a promotion into a senior rank lands on
+  // probation rather than outright. Without this the dashboard and the slash
+  // command gave different results for the same action.
+  const probationDays = to ? config.trial?.promotionTrials?.[to.key] : null;
+  if (probationDays) {
+    db.startTrial(guild.id, userId, Date.now() + probationDays * DAY, {
+      kind: 'promotion',
+      fromRank: currentIdx >= 0 ? R.ranks[currentIdx].key : null,
+    });
+  }
+
+  db.addAudit(
+    guild.id,
+    actor.id,
+    userId,
+    kind,
+    `${from} → ${to?.name ?? 'removed'}${probationDays ? ` (${probationDays}-day probation)` : ''}: ${reason}`
+  );
 
   const color = kind === 'promote' ? config.colors.promote : config.colors.demote;
 
@@ -544,7 +565,7 @@ async function changeRank(client, guild, userId, { destinationKey, reason, note,
     ],
   });
 
-  return { from, to: to?.name ?? null };
+  return { from, to: to?.name ?? null, probationDays: probationDays ?? null };
 }
 
 // ---------------------------------------------------------------
