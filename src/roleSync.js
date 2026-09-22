@@ -15,11 +15,19 @@
 const config = require('./../config');
 const tempest = require('./tempest');
 
-const UPSERT = `INSERT INTO tempest_role_sync (discord_id, groups, updated_at)
-                VALUES (?,?,?)
-                ON DUPLICATE KEY UPDATE groups = VALUES(groups), updated_at = VALUES(updated_at)`;
-
-const READ = 'SELECT groups FROM tempest_role_sync WHERE discord_id = ?';
+// `groups` has been a reserved word in MySQL since 8.0.2, so it has to be
+// quoted or both of these are syntax errors — and push() swallows the error
+// into a log line, which means role sync would simply never apply anything and
+// the only symptom would be noise in the console.
+//
+// Exported for the same reason tempest.SQL is: so the contract test checks
+// this text rather than a copy of it that can drift.
+const SQL = {
+  upsert: `INSERT INTO tempest_role_sync (discord_id, \`groups\`, updated_at)
+           VALUES (?,?,?)
+           ON DUPLICATE KEY UPDATE \`groups\` = VALUES(\`groups\`), updated_at = VALUES(updated_at)`,
+  read: 'SELECT \`groups\` FROM tempest_role_sync WHERE discord_id = ?',
+};
 
 function settings() {
   return (config.tempest && config.tempest.roleSync) || {};
@@ -76,10 +84,10 @@ async function push(member) {
 
   const groups = groupsFor(member).join(',');
   try {
-    const rows = await tempest.query(READ, [member.id]);
+    const rows = await tempest.query(SQL.read, [member.id]);
     if (rows[0] && rows[0].groups === groups) return null;
 
-    await tempest.query(UPSERT, [member.id, groups, Date.now()]);
+    await tempest.query(SQL.upsert, [member.id, groups, Date.now()]);
     return groups;
   } catch (e) {
     console.error(`[roleSync] could not push ${member.id}: ${e.message}`);
@@ -148,4 +156,4 @@ function attach(client) {
   });
 }
 
-module.exports = { attach, push, reconcileAll, groupsFor, activeMappings, roleIdsOf, enabled };
+module.exports = { attach, push, reconcileAll, groupsFor, activeMappings, roleIdsOf, enabled, SQL };

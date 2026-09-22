@@ -183,6 +183,23 @@ test('one Discord account cannot hold two Minecraft accounts', () => {
   );
 });
 
+test('role sync quotes every reserved identifier', () => {
+  // `groups` is reserved in MySQL 8.0.2+. Unquoted, both statements are syntax
+  // errors — and push() logs the failure and carries on, so role sync would
+  // silently never apply anything and the only symptom would be console noise.
+  //
+  // Checks the real statements rather than a copy of them, which is why
+  // roleSync exports SQL at all. The contract test cannot execute MySQL syntax
+  // against SQLite, so reading the text is the most it can do.
+  for (const [name, sql] of Object.entries(roleSync.SQL)) {
+    const withoutQuoted = sql.replace(/`[^`]+`/g, 'QUOTED');
+    assert.ok(
+      !/\bgroups\b/i.test(withoutQuoted),
+      `roleSync.SQL.${name} uses an unquoted reserved word:\n${sql}`
+    );
+  }
+});
+
 test('the role-sync table takes a desired-state row', () => {
   // SQLite spells the upsert differently from MySQL, so the shape is what is checked here,
   // not the statement text.

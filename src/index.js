@@ -59,6 +59,7 @@ const observe = require('./observe');
 const digest = require('./digest');
 const web = require('./web/server');
 const roleSync = require('./roleSync');
+const tempest = require('./tempest');
 
 // ---- sanity check the config before we waste time connecting ----
 function validateConfig() {
@@ -211,6 +212,24 @@ client.once(Events.ClientReady, (c) => {
   digest.start(c);
   web.start(c);
   startupChecks.run(c).catch((e) => console.error('[startup]', e));
+
+  // Say at boot whether the Minecraft database is reachable. Without this the
+  // first anyone knows of a bad password or a firewall is a staff member
+  // running /ban and getting an error back.
+  if (tempest.enabled()) {
+    tempest
+      .check()
+      .then((r) =>
+        console.log(
+          r.ok
+            ? '[tempest] Minecraft database reachable'
+            : `[tempest] CANNOT reach the Minecraft database — /mc commands and /link code will fail: ${r.reason}`
+        )
+      )
+      .catch((e) => console.error('[tempest]', e.message));
+  } else {
+    console.log('[tempest] Minecraft integration is off');
+  }
 });
 
 // Some hosts (Render web services, for one) kill anything that doesn't bind a
