@@ -14,35 +14,55 @@ const db = require('./db');
 
 const COLORS = config.colors || {};
 
-/** Adds the options an action takes. Order matters — Discord shows them in this order. */
+/**
+ * Adds the options an action takes.
+ *
+ * Declared in the order they read best, then sorted so every required option
+ * comes first. Discord rejects the whole command otherwise — and it rejects it
+ * at registration, which takes the rest of the deploy down with it. That bit
+ * everything with a duration AND a required reason: ban, ipban and mute all
+ * came out required/optional/required.
+ *
+ * The partition is stable, so options keep their declared order within each
+ * group; only the groups move.
+ */
 function applyOptions(builder, { player = true, duration = false, reason = 'required' }) {
+  const options = [];
+
   if (player) {
-    builder.addStringOption((o) =>
-      o
-        .setName('player')
-        .setDescription('Minecraft username')
-        .setRequired(true)
-        .setMinLength(1)
-        .setMaxLength(16)
-    );
+    options.push({
+      name: 'player',
+      description: 'Minecraft username',
+      required: true,
+      minLength: 1,
+      maxLength: 16,
+    });
   }
   if (duration) {
-    builder.addStringOption((o) =>
-      o
-        .setName('duration')
-        .setDescription('e.g. 30m, 12h, 7d — leave blank for permanent')
-        .setRequired(false)
-    );
+    options.push({
+      name: 'duration',
+      description: 'e.g. 30m, 12h, 7d — leave blank for permanent',
+      required: false,
+    });
   }
   if (reason !== 'none') {
-    builder.addStringOption((o) =>
-      o
-        .setName('reason')
-        .setDescription('Why — shown to them and recorded')
-        .setRequired(reason === 'required')
-        .setMaxLength(300)
-    );
+    options.push({
+      name: 'reason',
+      description: 'Why — shown to them and recorded',
+      required: reason === 'required',
+      maxLength: 300,
+    });
   }
+
+  for (const opt of [...options.filter((o) => o.required), ...options.filter((o) => !o.required)]) {
+    builder.addStringOption((o) => {
+      o.setName(opt.name).setDescription(opt.description).setRequired(opt.required);
+      if (opt.minLength) o.setMinLength(opt.minLength);
+      if (opt.maxLength) o.setMaxLength(opt.maxLength);
+      return o;
+    });
+  }
+
   return builder;
 }
 

@@ -1518,6 +1518,39 @@ check('the two ticket systems are not both switched on', () => {
   );
 });
 
+check('no command puts a required option after an optional one', () => {
+  // Discord refuses the ENTIRE registration payload over this, not just the
+  // offending command, so one bad option order takes every command down with
+  // it mid-deploy. /ban, /ipban and /mute all shipped like that: a required
+  // reason declared after an optional duration.
+  const dir3 = path.join(__dirname, '..', 'src', 'commands');
+  const broken = [];
+
+  for (const file of fs.readdirSync(dir3).filter((f) => f.endsWith('.js'))) {
+    const json = require(path.join(dir3, file)).data.toJSON();
+
+    // A command either takes options directly or groups them under
+    // subcommands; the rule applies inside each set separately.
+    const groups = [(json.options ?? []).filter((o) => o.type !== 1)];
+    for (const sub of (json.options ?? []).filter((o) => o.type === 1)) {
+      groups.push(sub.options ?? []);
+    }
+
+    for (const opts of groups) {
+      let seenOptional = false;
+      for (const o of opts) {
+        if (!o.required) seenOptional = true;
+        else if (seenOptional) {
+          broken.push(`${file} /${json.name} -> ${o.name}`);
+          break;
+        }
+      }
+    }
+  }
+
+  assert.deepStrictEqual(broken, [], 'Discord would reject the whole deploy:\n  ' + broken.join('\n  '));
+});
+
 check('every command file has a unique name', () => {
   // /ticket and /ticketpanel were the first two commands added in years; a
   // collision here silently overwrites one of them in the Collection.
