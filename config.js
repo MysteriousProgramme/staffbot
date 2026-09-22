@@ -1036,12 +1036,46 @@ const config = {
     roleSync: {
       enabled: true,
 
+      // Every group listed here must ALSO appear in the plugin's
+      // discord.yml -> role-sync.managed-groups, or the plugin ignores it. That
+      // is the safety rail and it lives on the plugin side on purpose: a mistake
+      // in this file, or a compromised bot, cannot grant a group the server has
+      // not agreed to hand out.
+      //
+      // `group` is a LuckPerms group name and must already exist. A node for a
+      // group that does not exist grants nothing and says nothing.
       mappings: [
-        { name: 'booster', group: 'booster', roleIds: '' },
-        { name: 'media', group: 'media', roleIds: '' },
+        { name: 'booster', group: 'booster', roleIds: '1510662659266187417' },
+        { name: 'media', group: 'media', roleIds: '1526810464628113538' },
 
         // Several roles, one group — hold any of them and you qualify.
-        { name: 'tempest', group: 'tempest', roleIds: [] },
+        {
+          name: 'tempest',
+          group: 'tempest',
+          roleIds: [
+            '1512022267000000562',
+            '1510216051860836485',
+            '1515706395146850374',
+            '1522570760210878584',
+            '1535962171396325386',
+            '1548973710386528256',
+          ],
+        },
+
+        // The staff ladder. These mirror `ranks` above, but deliberately as
+        // their own list rather than derived from it: the in-game group someone
+        // gets is a server decision, and a rename or reshuffle of the Discord
+        // ladder should not silently change who has permissions in Minecraft.
+        { name: 'staff', group: 'staff', roleIds: '1510615626920493147' },
+        { name: 'hstaff', group: 'hstaff', roleIds: '1503657248793034893' },
+        { name: 'mod', group: 'mod', roleIds: '1513855672763023410' },
+        { name: 'hmod', group: 'hmod', roleIds: '1513855451555696740' },
+        { name: 'manager', group: 'manager', roleIds: '1518522106739032156' },
+
+        { name: 'developer', group: 'developer', roleIds: '1537771914725163038' },
+        { name: 'thegoat', group: 'thegoat', roleIds: '1512482160446013541' },
+        { name: 'owner', group: 'owner', roleIds: '1514544622423113809' },
+        { name: 'founder', group: 'founder', roleIds: '1503657119843614720' },
       ],
     },
   },

@@ -149,18 +149,39 @@ async function set(interaction) {
   db.addAudit(interaction.guildId, interaction.user.id, user.id, 'link', `IGN ${ign}`);
 
   const tracked = Boolean(db.getStaff(interaction.guildId, user.id));
-  return ok(
-    interaction,
-    new EmbedBuilder()
-      .setColor(config.colors.promote)
-      .setDescription(
-        `🔗 **${ign}** → <@${user.id}>\n\n` +
-          (tracked
-            ? 'Their in-game chat now counts toward in-game presence.'
-            : `_They aren't tracked as staff, so this does nothing yet. It'll start counting the moment they're hired._`)
-      ),
-    { ephemeral: true }
-  );
+  const lines = [`🔗 **${ign}** → <@${user.id}>`, ''];
+
+  // The bot's own map only drives scoring. Ask the server for the real link too, so that
+  // `/link set` means the same thing everywhere — without it a staff member links someone,
+  // sees it confirmed, and the player is still refused at the gate with nothing to explain
+  // why.
+  if (tempest.enabled()) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    let result;
+    try {
+      result = await tempest.adminLink(interaction.user.id, user.id, user.tag, ign);
+    } catch (e) {
+      result = { ok: false, message: `Could not reach the Minecraft server: ${e.message}` };
+    }
+    lines.push(result.ok
+      ? 'Linked on the Minecraft server too, so they can join now.'
+      : `**Not linked on the Minecraft server.** ${result.message || 'The server refused it.'}`);
+  } else {
+    lines.push('_The Minecraft integration is off, so this only affects scoring._');
+  }
+
+  lines.push('', tracked
+    ? 'Their in-game chat now counts toward in-game presence.'
+    : `_They aren't tracked as staff, so scoring does nothing yet. It'll start the moment they're hired._`);
+
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.promote)
+    .setDescription(lines.join('\n'));
+
+  // deferReply above means the usual ok() helper would be replying to an answered
+  // interaction.
+  if (interaction.deferred) return interaction.editReply({ embeds: [embed] });
+  return ok(interaction, embed, { ephemeral: true });
 }
 
 async function remove(interaction) {

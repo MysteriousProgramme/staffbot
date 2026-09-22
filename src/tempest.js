@@ -34,6 +34,13 @@ const SQL = {
     `INSERT INTO tempest_link_request
        (request_key, action, discord_id, discord_name, payload, created_at, status)
      VALUES (?, 'LINK', ?, ?, ?, ?, 'PENDING')`,
+  // discord_id is WHO IS BEING LINKED, same as every other action. The staff member
+  // asking for it rides in the payload, because the plugin authorises this against
+  // THEIR linked Minecraft account rather than against anything the bot claims.
+  insertAdminLink:
+    `INSERT INTO tempest_link_request
+       (request_key, action, discord_id, discord_name, payload, created_at, status)
+     VALUES (?, 'ADMIN_LINK', ?, ?, ?, ?, 'PENDING')`,
   readLink:
     'SELECT status, result_code, result_message FROM tempest_link_request WHERE id = ?',
   readAccount: 'SELECT uuid, name FROM tempest_link WHERE discord_id = ?',
@@ -174,17 +181,19 @@ async function run(discordId, discordName, action, args, confirmed) {
  * Goes to a different table from run(): a link request arrives from somebody who has no
  * linked account yet, so it cannot be permission-checked the way a command is.
  */
-async function redeemLinkCode(discordId, discordName, code) {
-  const key = requestKey();
-  const result = await query(SQL.insertLink, [
-    key, discordId, discordName || null, code, Date.now(),
-  ]);
-
+/**
+ * Waits for the plugin to answer a row in tempest_link_request.
+ *
+ * Shared by both link paths: the plugin writes the verdict back onto the same row, so the only
+ * difference between redeeming a code and forcing a link is which row was inserted.
+ */
+async function awaitLinkResult(insertId) {
   const deadline = Date.now() + (settings().timeoutMs || 15000);
   const interval = settings().pollIntervalMs || 400;
 
   for (;;) {
-    const rows = await query(SQL.readLink, [result.insertId]);
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await query(SQL.readLink, [insertId]);
     const row = rows[0];
     if (row && row.status !== 'PENDING' && row.status !== 'CLAIMED') {
       return { ok: row.status === 'OK', code: row.result_code, message: row.result_message };
@@ -192,8 +201,34 @@ async function redeemLinkCode(discordId, discordName, code) {
     if (Date.now() > deadline) {
       return { ok: false, code: 'TIMEOUT', message: 'The server did not answer in time.' };
     }
+    // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => setTimeout(r, interval));
   }
+}
+
+/**
+ * Links someone else's account on a staff member's behalf.
+ *
+ * The plugin decides whether the staff member may: it checks THEIR linked Minecraft account for
+ * tempest.admin.link and refuses otherwise. Being allowed to run the Discord command is not the
+ * same as being allowed to change a link, and only one of those two answers survives somebody
+ * losing their in-game rank.
+ */
+async function adminLink(staffDiscordId, targetDiscordId, targetDiscordName, playerName) {
+  const key = requestKey();
+  const payload = `player=${playerName},actor=${staffDiscordId}`;
+  const result = await query(SQL.insertAdminLink, [
+    key, targetDiscordId, targetDiscordName || null, payload, Date.now(),
+  ]);
+  return awaitLinkResult(result.insertId);
+}
+
+async function redeemLinkCode(discordId, discordName, code) {
+  const key = requestKey();
+  const result = await query(SQL.insertLink, [
+    key, discordId, discordName || null, code, Date.now(),
+  ]);
+  return awaitLinkResult(result.insertId);
 }
 
 /** The Minecraft account a Discord user has linked, or null. */
@@ -236,7 +271,7 @@ async function close() {
 }
 
 module.exports = {
-  enabled, credentials, tableExists, run, redeemLinkCode, linkedAccount, check, close, SEP, SQL, encodeArgs,
+  enabled, credentials, tableExists, run, redeemLinkCode, adminLink, linkedAccount, check, close, SEP, SQL, encodeArgs,
   // Exposed so roleSync can write its own desired-state rows without a second pool.
   query,
 };

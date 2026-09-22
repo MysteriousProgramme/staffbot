@@ -127,6 +127,38 @@ test('the link insert fits the plugin\'s columns', () => {
   assert.strictEqual(row.status, 'PENDING');
 });
 
+test("the admin-link insert fits the plugin's columns", () => {
+  const info = db
+    .prepare(tempest.SQL.insertAdminLink)
+    .run('key-3', '222222222222222222', 'target#0002',
+      'player=Notch,actor=111111111111111111', Date.now());
+  assert.strictEqual(info.changes, 1);
+
+  const row = db.prepare(tempest.SQL.readLink).get(info.lastInsertRowid);
+  assert.strictEqual(row.status, 'PENDING');
+});
+
+test('the admin-link payload carries the player and the acting staff member', () => {
+  // The plugin splits on commas and then on the first '=', and authorises the request
+  // against `actor` rather than against the row's discord_id. Getting the two the wrong
+  // way round would link the staff member to the target's account.
+  const row = db
+    .prepare('SELECT discord_id, payload FROM tempest_link_request WHERE request_key = ?')
+    .get('key-3');
+
+  const fields = Object.fromEntries(
+    row.payload.split(',').map((pair) => {
+      const at = pair.indexOf('=');
+      return [pair.slice(0, at).trim(), pair.slice(at + 1).trim()];
+    })
+  );
+
+  assert.strictEqual(fields.player, 'Notch');
+  assert.strictEqual(fields.actor, '111111111111111111');
+  // discord_id is who gets linked, never who asked for it.
+  assert.strictEqual(row.discord_id, '222222222222222222');
+});
+
 test('a mixed-case link code survives the round trip unchanged', () => {
   const row = db
     .prepare('SELECT payload FROM tempest_link_request WHERE request_key = ?')
