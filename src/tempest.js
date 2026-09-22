@@ -223,16 +223,28 @@ async function adminLink(staffDiscordId, targetDiscordId, targetDiscordName, pla
   return awaitLinkResult(result.insertId);
 }
 
-async function redeemLinkCode(discordId, discordName, code, bypass = false) {
-  const key = requestKey();
-  // `code=X,bypass=true` rather than the bare code. The plugin still accepts a bare
-  // code, so a server on the older build keeps working while this one is deployed —
-  // a link flow that breaks in the gap between the two is one nobody can log in to fix.
-  const payload = bypass ? `code=${code},bypass=true` : code;
+async function sendLinkCode(discordId, discordName, payload) {
   const result = await query(SQL.insertLink, [
-    key, discordId, discordName || null, payload, Date.now(),
+    requestKey(), discordId, discordName || null, payload, Date.now(),
   ]);
   return awaitLinkResult(result.insertId);
+}
+
+async function redeemLinkCode(discordId, discordName, code, bypass = false) {
+  if (!bypass) {
+    return sendLinkCode(discordId, discordName, code);
+  }
+
+  // `code=X,bypass=true` carries the exemption the bare code cannot. A server still on
+  // the older build reads the whole payload as the code and rejects it, so fall back
+  // rather than leaving the exempt people — the owners — as the only ones who cannot
+  // link until the plugin is updated. The code is not consumed by a failed attempt, so
+  // the retry is free; the cooldown simply is not skipped, which is the lesser loss.
+  const result = await sendLinkCode(discordId, discordName, `code=${code},bypass=true`);
+  if (result.ok || result.code !== 'INVALID_CODE') {
+    return result;
+  }
+  return sendLinkCode(discordId, discordName, code);
 }
 
 /** The Minecraft account a Discord user has linked, or null. */
