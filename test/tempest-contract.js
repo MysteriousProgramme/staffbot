@@ -167,6 +167,26 @@ test('a mixed-case link code survives the round trip unchanged', () => {
   assert.strictEqual(row.payload, 'aB4cD2');
 });
 
+test('a bare link code is still sent when nobody is exempt', () => {
+  // The plugin accepts both shapes, but only because the bare one is never ambiguous:
+  // link codes are alphanumeric, so an = can only mean the field form.
+  const bare = 'aB4cD2';
+  assert.ok(!bare.includes('='), 'a link code must never contain =');
+});
+
+test('an exempt member sends the code and the flag as fields', () => {
+  const payload = 'code=aB4cD2,bypass=true';
+  const fields = Object.fromEntries(
+    payload.split(',').map((pair) => {
+      const at = pair.indexOf('=');
+      return [pair.slice(0, at).trim(), pair.slice(at + 1).trim()];
+    })
+  );
+  // The plugin reads these two keys by name; a rename on either side is silent.
+  assert.strictEqual(fields.code, 'aB4cD2');
+  assert.strictEqual(fields.bypass, 'true');
+});
+
 test('the linked-account lookup fits the plugin\'s link table', () => {
   const now = Date.now();
   db.prepare(

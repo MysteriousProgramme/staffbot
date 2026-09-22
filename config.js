@@ -1033,6 +1033,23 @@ const config = {
     // `group` is a LuckPerms group name and must already exist — a node for a
     // group that does not exist grants nothing, silently.
     // -------------------------------------------------------------------------
+    // Discord roles whose holders skip the link cooldown and the failed-code rate
+    // limit on `/link code`.
+    //
+    // Sent to the plugin as a flag on the request, because only the bot can see
+    // Discord roles. The plugin honours it for those two limits and nothing else,
+    // and only while its own relink.trust-bot-bypass is on — a link, a group and a
+    // punishment are all still decided from the actor's Minecraft account.
+    //
+    // The limits exist to stop players cycling accounts. That is not what these
+    // people are doing when a link goes wrong at 2am.
+    bypassCooldownRoleIds: [
+      '1503657119843614720',   // Founder
+      '1514544622423113809',   // Owner
+      '1518522106739032156',   // Manager
+      '1513855451555696740',   // Head Mod
+    ],
+
     roleSync: {
       enabled: true,
 

@@ -223,10 +223,14 @@ async function adminLink(staffDiscordId, targetDiscordId, targetDiscordName, pla
   return awaitLinkResult(result.insertId);
 }
 
-async function redeemLinkCode(discordId, discordName, code) {
+async function redeemLinkCode(discordId, discordName, code, bypass = false) {
   const key = requestKey();
+  // `code=X,bypass=true` rather than the bare code. The plugin still accepts a bare
+  // code, so a server on the older build keeps working while this one is deployed —
+  // a link flow that breaks in the gap between the two is one nobody can log in to fix.
+  const payload = bypass ? `code=${code},bypass=true` : code;
   const result = await query(SQL.insertLink, [
-    key, discordId, discordName || null, code, Date.now(),
+    key, discordId, discordName || null, payload, Date.now(),
   ]);
   return awaitLinkResult(result.insertId);
 }

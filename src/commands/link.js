@@ -85,7 +85,8 @@ async function redeem(interaction) {
 
   let result;
   try {
-    result = await tempest.redeemLinkCode(interaction.user.id, interaction.user.tag, code);
+    result = await tempest.redeemLinkCode(
+      interaction.user.id, interaction.user.tag, code, skipsCooldown(interaction.member));
   } catch (e) {
     return interaction.editReply(`Could not reach the Minecraft server: ${e.message}`);
   }
@@ -124,6 +125,18 @@ async function redeem(interaction) {
     );
 
   return interaction.editReply({ embeds: [embed] });
+}
+
+/**
+ * Whether this member skips the link cooldown and the failed-code rate limit.
+ *
+ * Only the bot can see Discord roles, so this answer can only come from here — the plugin has
+ * no way to ask. It trusts the flag for these two limits and nothing else, and only while its
+ * own relink.trust-bot-bypass is on.
+ */
+function skipsCooldown(member) {
+  const ids = config.tempest?.bypassCooldownRoleIds ?? [];
+  return ids.some((id) => member?.roles?.cache?.has(id));
 }
 
 async function set(interaction) {
