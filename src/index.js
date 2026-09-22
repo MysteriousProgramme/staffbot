@@ -58,6 +58,7 @@ const startupChecks = require('./startupChecks');
 const observe = require('./observe');
 const digest = require('./digest');
 const web = require('./web/server');
+const roleSync = require('./roleSync');
 
 // ---- sanity check the config before we waste time connecting ----
 function validateConfig() {
@@ -198,6 +199,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 tracking.register(client);
 ticketWatch.register(client);
 tickets.register(client);
+// Discord roles -> LuckPerms groups. No-op unless tempest.roleSync is on.
+roleSync.attach(client);
 
 client.once(Events.ClientReady, (c) => {
   console.log(`[ready] logged in as ${c.user.tag}`);

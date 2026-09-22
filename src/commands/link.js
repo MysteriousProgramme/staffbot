@@ -3,6 +3,7 @@ const config = require('../../config');
 const db = require('../db');
 const R = require('../ranks');
 const { err, ok } = require('../util');
+const tempest = require('../tempest');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -34,18 +35,96 @@ module.exports = {
       s
         .setName('list')
         .setDescription('Every linked name, and which staff are still missing one')
+    )
+    .addSubcommand((s) =>
+      s
+        .setName('code')
+        .setDescription('Link your own account with the code the server showed you')
+        .addStringOption((o) =>
+          o
+            .setName('code')
+            .setDescription('The 6-character code from the kick screen — capitals matter')
+            .setRequired(true)
+            .setMinLength(6)
+            .setMaxLength(12)
+        )
     ),
 
   async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+
+    // Anyone may redeem their own code — that is the whole point of the gate. The other
+    // subcommands edit someone else's mapping, so they stay staff-only.
+    if (sub === 'code') return redeem(interaction);
+
     if (!R.meetsRequirement(interaction.member, config.permissions.review)) {
       return err(interaction, 'Staff only.');
     }
-    const sub = interaction.options.getSubcommand();
     if (sub === 'set') return set(interaction);
     if (sub === 'remove') return remove(interaction);
     if (sub === 'list') return list(interaction);
   },
 };
+
+/**
+ * Redeems a link code issued by the Minecraft server.
+ *
+ * The plugin owns the decision — it checks the code, enforces one account per Discord user,
+ * and carries any punishment record across on a relink. All this does is carry the request
+ * and mirror the result into the bot's own scoring map.
+ */
+async function redeem(interaction) {
+  if (!tempest.enabled()) {
+    return err(
+      interaction,
+      'The Minecraft integration is turned off, so codes cannot be redeemed here.'
+    );
+  }
+  const code = interaction.options.getString('code').trim();
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  let result;
+  try {
+    result = await tempest.redeemLinkCode(interaction.user.id, interaction.user.tag, code);
+  } catch (e) {
+    return interaction.editReply(`Could not reach the Minecraft server: ${e.message}`);
+  }
+
+  if (!result.ok) {
+    return interaction.editReply(
+      result.message || 'That code is not valid, or it has expired. Rejoin for a new one.'
+    );
+  }
+
+  // The plugin is now the source of truth for the link. The bot keeps its own IGN map for
+  // chat attribution, so mirror it across or in-game presence would silently score zero.
+  let account = null;
+  try {
+    account = await tempest.linkedAccount(interaction.user.id);
+  } catch {
+    // Non-fatal: the link itself succeeded.
+  }
+  if (account && account.name) {
+    try {
+      db.linkGameName(interaction.guildId, account.name, interaction.user.id, 'link-code');
+      db.addAudit(interaction.guildId, interaction.user.id, interaction.user.id, 'link',
+        `IGN ${account.name} (code)`);
+    } catch {
+      // Same again — scoring is a nice-to-have, the link is the thing that mattered.
+    }
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.promote)
+    .setTitle('Linked')
+    .setDescription(
+      account && account.name
+        ? `Your Discord account is linked to **${account.name}**. Reconnect to the server to play.`
+        : 'Your account is linked. Reconnect to the server to play.'
+    );
+
+  return interaction.editReply({ embeds: [embed] });
+}
 
 async function set(interaction) {
   const user = interaction.options.getUser('user');

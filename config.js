@@ -962,6 +962,76 @@ const config = {
   //
   // It binds to 127.0.0.1 — the loopback address — which means it is
   // reachable from the machine it runs on and nowhere else. On a server you
+  // ---------------------------------------------------------------------------
+  // The Minecraft server (Tempest Suite plugin)
+  //
+  // The bot does not touch the game directly. It writes a request row into the
+  // plugin's database; the plugin decides whether it is allowed, does the work,
+  // and writes the answer back. Every rule — who may ban whom, rank protection,
+  // the approval queue, the audit trail — lives on the plugin side, so there is
+  // one copy of it rather than two that drift apart.
+  //
+  // Permissions come from the Minecraft account a Discord user has linked, never
+  // from their Discord roles. Demote someone in LuckPerms and their Discord
+  // powers go at the same moment; an unlinked user has none at all.
+  // ---------------------------------------------------------------------------
+  tempest: {
+    // Off until you fill in the connection below. With it off, the /mc* commands
+    // and `/link code` say so plainly instead of failing oddly.
+    enabled: false,
+
+    // The database the PLUGIN uses — not the bot's own SQLite. Must be MySQL or
+    // MariaDB: the plugin's SQLite mode keeps its file on the game server, which
+    // this bot generally cannot reach.
+    host: '127.0.0.1',
+    port: 3306,
+    user: 'tempest',
+    // Prefer the TEMPEST_DB_PASSWORD environment variable over putting it here —
+    // config.js is committed to git.
+    password: '',
+    database: 'tempest',
+
+    connectionLimit: 4,
+    connectTimeoutMs: 5000,
+
+    // How long to wait for the plugin to answer before giving up. The plugin
+    // polls its queue every couple of seconds, so most answers land well inside
+    // this; a timeout means "it may still apply", not "nothing happened".
+    timeoutMs: 15000,
+    pollIntervalMs: 400,
+
+    // -------------------------------------------------------------------------
+    // Auto LuckPerms — Discord roles grant in-game groups
+    //
+    // Hold the role, get the group. Lose the role, lose the group. Applied when
+    // the role changes, again when the player next joins (so a change made while
+    // the server was down is not lost), and on a slow sweep.
+    //
+    // `roleIds` takes one id or a list. A mapping matches if the member holds ANY
+    // of its ids, which is how several roles can feed one group.
+    //
+    // The plugin will only ever grant a group listed in ITS OWN
+    // discord.yml -> role-sync.managed-groups. That is the safety rail: a mistake
+    // here, or a compromised bot, cannot hand out admin. Groups not listed there
+    // are never added and never removed, so a rank granted by hand in game is
+    // safe from being tidied away.
+    //
+    // `group` is a LuckPerms group name and must already exist — a node for a
+    // group that does not exist grants nothing, silently.
+    // -------------------------------------------------------------------------
+    roleSync: {
+      enabled: false,
+
+      mappings: [
+        { name: 'booster', group: 'booster', roleIds: '' },
+        { name: 'media', group: 'media', roleIds: '' },
+
+        // Several roles, one group — hold any of them and you qualify.
+        { name: 'tempest', group: 'tempest', roleIds: [] },
+      ],
+    },
+  },
+
   // reach it through an SSH tunnel. Read the warning on `host` before you
   // change that.
   web: {
