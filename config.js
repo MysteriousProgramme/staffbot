@@ -1033,6 +1033,51 @@ const config = {
     // `group` is a LuckPerms group name and must already exist — a node for a
     // group that does not exist grants nothing, silently.
     // -------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // WHO MAY RUN THE /mc COMMANDS FROM DISCORD, AND WHERE
+    // ------------------------------------------------------------------------
+    // This is the SECOND gate, not the only one. The plugin still checks the
+    // Minecraft account the staff member has linked, against the same permission
+    // node the in-game command uses. Someone who passes here and not there is
+    // told so plainly by the server.
+    //
+    // Both gates earn their place. The plugin's is the real boundary — it keeps
+    // working if the bot is compromised, and it follows an in-game demotion the
+    // moment it happens. This one exists so that a Trial Staff who types /mcban
+    // gets a straight answer from the bot rather than a confusing refusal from a
+    // server they have never heard of, and so the commands can be kept to one
+    // channel.
+    commands: {
+      // Only these channels. Empty list means anywhere.
+      channelIds: ['1525828018528981044'],
+
+      // Minimum ladder rank per action. Keys are the `action` in src/commands/mc*.js,
+      // values are rank keys from `ranks` at the top of this file.
+      //
+      // An action missing from this list falls back to `permissions.manageStaff`,
+      // so a command added later is locked down rather than open by default.
+      //
+      // The pairs are deliberate: whoever can mute can unmute, whoever can ban can
+      // unban. Being able to impose a punishment but not lift it is how a mistake
+      // becomes somebody else's emergency.
+      minimumRank: {
+        warn: 'staff',
+        mute: 'staff',
+        unmute: 'staff',
+
+        kick: 'headstaff',
+        freeze: 'headstaff',
+        unfreeze: 'headstaff',
+
+        ban: 'mod',
+        unban: 'mod',
+
+        // Hits everyone sharing an address, which on a household connection is a
+        // family rather than an alt.
+        ipban: 'headmod',
+      },
+    },
+
     // Discord roles whose holders skip the link cooldown and the failed-code rate
     // limit on `/link code`.
     //

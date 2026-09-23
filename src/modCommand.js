@@ -9,6 +9,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } =
   require('discord.js');
 const config = require('../config');
+const R = require('./ranks');
 const tempest = require('./tempest');
 const db = require('./db');
 
@@ -67,6 +68,34 @@ function applyOptions(builder, { player = true, duration = false, reason = 'requ
 }
 
 /**
+ * The Discord-side gate: right channel, high enough rank.
+ *
+ * Returns null when the command may run, or the sentence to show the person.
+ *
+ * Deliberately before deferReply: a refusal should be instant and leave no trace of a
+ * command that was never going to run.
+ */
+function refuse(interaction, action) {
+  const rules = config.tempest?.commands ?? {};
+
+  const channels = rules.channelIds ?? [];
+  if (channels.length > 0 && !channels.includes(interaction.channelId)) {
+    const where = channels.map((id) => `<#${id}>`).join(' or ');
+    return `The Minecraft commands only work in ${where}.`;
+  }
+
+  // Unlisted actions fall back to the strictest sensible rank rather than being open,
+  // so adding a command to the folder cannot quietly hand it to everyone.
+  const needed = rules.minimumRank?.[action] ?? config.permissions.manageStaff;
+  if (!R.meetsRequirement(interaction.member, needed)) {
+    const rank = R.rankByKey(needed)?.name ?? needed;
+    return `\`/${action}\` is ${rank} and above.`;
+  }
+
+  return null;
+}
+
+/**
  * Builds one command.
  *
  * `destructive` mirrors the plugin's own flag. The plugin refuses an unconfirmed destructive
@@ -81,6 +110,11 @@ function build({ name, description, action, duration = false, reason = 'required
     data,
 
     async execute(interaction) {
+      const refusal = refuse(interaction, action);
+      if (refusal) {
+        return interaction.reply({ content: refusal, flags: MessageFlags.Ephemeral });
+      }
+
       if (!tempest.enabled()) {
         return interaction.reply({
           content:

@@ -167,6 +167,46 @@ test('a mixed-case link code survives the round trip unchanged', () => {
   assert.strictEqual(row.payload, 'aB4cD2');
 });
 
+test('every /mc command has a rank rule, and every rule names a real rank', () => {
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const config2 = require('../config');
+
+  const dir = path2.join(__dirname, '..', 'src', 'commands');
+  const actions = fs2
+    .readdirSync(dir)
+    .filter((f) => f.startsWith('mc') && f.endsWith('.js'))
+    .map((f) => require(path2.join(dir, f)).data.toJSON().name);
+
+  const rules = config2.tempest.commands.minimumRank;
+  const rankKeys = config2.ranks.map((r) => r.key);
+
+  // An action with no rule still works — it falls back to manageStaff — but silently
+  // being the strictest rank is rarely what someone adding a command intended.
+  const unruled = actions.filter((a) => !(a in rules));
+  assert.deepStrictEqual(unruled, [],
+    'these commands have no entry in tempest.commands.minimumRank: ' + unruled.join(', '));
+
+  // A typo here does not throw; meetsRequirement treats an unknown rank as
+  // override-only, so the command quietly becomes unusable by all normal staff.
+  const bogus = Object.entries(rules).filter(([, rank]) => !rankKeys.includes(rank));
+  assert.deepStrictEqual(bogus, [],
+    'these rules name a rank that is not on the ladder: ' + JSON.stringify(bogus));
+});
+
+test('lifting a punishment is never harder than imposing it', () => {
+  const config2 = require('../config');
+  const rules = config2.tempest.commands.minimumRank;
+  const index = (key) => config2.ranks.findIndex((r) => r.key === key);
+
+  // Being able to ban but not unban turns a staff member's own mistake into
+  // somebody else's emergency, and they are the one person certain to notice it.
+  for (const [impose, lift] of [['ban', 'unban'], ['mute', 'unmute'], ['freeze', 'unfreeze']]) {
+    assert.ok(index(rules[lift]) <= index(rules[impose]),
+      `/${lift} (${rules[lift]}) must not outrank /${impose} (${rules[impose]})`);
+  }
+});
+
 test('a bare link code is still sent when nobody is exempt', () => {
   // The plugin accepts both shapes, but only because the bare one is never ambiguous:
   // link codes are alphanumeric, so an = can only mean the field form.
