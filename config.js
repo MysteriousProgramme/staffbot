@@ -89,9 +89,16 @@ const config = {
       {
         key: 'tournament',
 
-        // Plain text. Custom emoji render in a description but NOT in an embed
-        // title, so anything with a colon-name belongs below, not here.
         name: 'Tournament Participant Applications',
+
+        // How the name is drawn. 1, 2 or 3 renders it as a markdown heading at the
+        // top of the description — bigger than an embed title, which has no size of
+        // its own, and able to carry custom emoji, which a title cannot. 0 uses the
+        // ordinary embed title instead.
+        //
+        // The body below uses ### for its own sections, so 1 keeps the name clearly
+        // above them.
+        headingLevel: 1,
 
         // `:name:` is looked up in THIS server's emoji when the panel is drawn, so
         // there are no ids to paste and re-uploading an emoji does not break it.

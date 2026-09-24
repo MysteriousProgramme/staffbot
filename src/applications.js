@@ -101,15 +101,25 @@ function buildPanel(guild, kind) {
   const open = db.applicationsOpen(guild.id, kind.key);
   const mark = open ? kind.openEmoji : kind.closedEmoji;
 
+  // An embed title is a fixed size — there is no way to make one bigger. A markdown
+  // heading in the DESCRIPTION renders larger, so `headingLevel` moves the name there
+  // instead. It also lets the name carry custom emoji, which an embed title cannot.
+  const level = Number(kind.headingLevel ?? 0);
+  const asHeading = level >= 1 && level <= 3;
+
   const embed = new EmbedBuilder()
     .setColor(kind.color ?? 0x5865f2)
-    // Custom emoji do not render in a title, only in a description, so the title
-    // is left plain rather than quietly dropping whatever was put in it.
-    .setTitle(kind.name)
     .setDescription(
-      withEmoji(guild, `${kind.description ?? ''}\n\n**Status:** `
-        + `${open ? 'OPEN' : 'CLOSED'}${mark ? ` ${mark}` : ''}`).trim()
+      withEmoji(guild, [
+        asHeading ? `${'#'.repeat(level)} ${kind.name}` : null,
+        kind.description ?? '',
+        `\n**Status:** ${open ? 'OPEN' : 'CLOSED'}${mark ? ` ${mark}` : ''}`,
+      ].filter((line) => line !== null).join('\n')).trim()
     );
+
+  // Only when the name is not already the first line of the description — both
+  // would read as the title being printed twice.
+  if (!asHeading) embed.setTitle(kind.name);
 
   // attachment:// resolves only against a file on the SAME message, so the file has
   // to ride along on every edit too — see `files` below. Sending the embed without
