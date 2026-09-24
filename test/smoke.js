@@ -1518,6 +1518,60 @@ check('the two ticket systems are not both switched on', () => {
   );
 });
 
+check('every application modal fits inside Discord limits', () => {
+  // Discord rejects the WHOLE modal over one long label, and the only symptom is
+  // the button doing nothing — no error in the channel, nothing in the log. Easy to
+  // reintroduce by rewording a question, so it is worth asserting.
+  const problems = [];
+
+  for (const kind of config.applications?.kinds ?? []) {
+    const questions = kind.questions ?? [];
+
+    if (questions.length === 0) problems.push(`${kind.key}: no questions`);
+    if (questions.length > 5) {
+      problems.push(`${kind.key}: ${questions.length} questions, Discord allows 5`);
+    }
+
+    const ids = questions.map((q) => q.id);
+    const duplicated = ids.filter((id, i) => ids.indexOf(id) !== i);
+    if (duplicated.length) {
+      // Two fields with one id: the second silently overwrites the first on submit.
+      problems.push(`${kind.key}: duplicate question id ${duplicated.join(', ')}`);
+    }
+
+    for (const q of questions) {
+      if (!q.id) problems.push(`${kind.key}: a question has no id`);
+      if (!q.label) problems.push(`${kind.key}/${q.id}: no label`);
+      if ((q.label ?? '').length > 45) {
+        problems.push(`${kind.key}/${q.id}: label is ${q.label.length}, max 45`);
+      }
+      if ((q.placeholder ?? '').length > 100) {
+        problems.push(`${kind.key}/${q.id}: placeholder is ${q.placeholder.length}, max 100`);
+      }
+    }
+  }
+
+  assert.deepStrictEqual(problems, [], 'Discord would refuse these modals:\n  ' + problems.join('\n  '));
+});
+
+check('an application that grants a role names one that exists in config', () => {
+  // A blank role is a deliberate choice — accept without granting anything — but a
+  // typo is not, and the difference only shows up when somebody is accepted and
+  // gets nothing.
+  const bad = [];
+  for (const kind of config.applications?.kinds ?? []) {
+    if (kind.acceptedRoleId && !/^\d{17,20}$/.test(String(kind.acceptedRoleId))) {
+      bad.push(`${kind.key}: acceptedRoleId is not a snowflake`);
+    }
+    for (const field of ['pendingChannelId', 'acceptedChannelId', 'deniedChannelId']) {
+      if (kind[field] && !/^\d{17,20}$/.test(String(kind[field]))) {
+        bad.push(`${kind.key}: ${field} is not a snowflake`);
+      }
+    }
+  }
+  assert.deepStrictEqual(bad, []);
+});
+
 check('no command puts a required option after an optional one', () => {
   // Discord refuses the ENTIRE registration payload over this, not just the
   // offending command, so one bad option order takes every command down with

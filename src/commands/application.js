@@ -80,7 +80,7 @@ module.exports = {
     // Run even when the state did not change: a panel posted while it was already
     // closed still needs its button greyed out, and this is the only thing that does it.
     const { edited, forgotten } = await applications.refreshPanels(
-      interaction.client, interaction.guildId, kind
+      interaction.client, interaction.guild, kind
     );
 
     const lines = [

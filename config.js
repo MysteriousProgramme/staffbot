@@ -89,74 +89,89 @@ const config = {
       {
         key: 'tournament',
 
-        // Shown on the panel and on every review card.
+        // Plain text. Custom emoji render in a description but NOT in an embed
+        // title, so anything with a colon-name belongs below, not here.
         name: 'Tournament Participant Applications',
 
-        // Custom emoji render in a description but NOT in an embed title, so
-        // anything with <:name:id> belongs in here rather than in `name`.
+        // `:name:` is looked up in THIS server's emoji when the panel is drawn, so
+        // there are no ids to paste and re-uploading an emoji does not break it.
+        // A name the server does not have is left as written rather than vanishing.
         description:
           'Interested in participating in the seasonal tournaments, make an application, '
           + 'wait to get accepted and perform your best in the tournament\n'
-          + '\n### Requirements:\n'
-          + 'Must be a good sport\n'
-          + 'No significant previous infractions.\n'
-          + '\n### Warnings:\n'
-          + 'Troll applications will result in a warn.',
+          + '\n### :check: Requirements:\n'
+          + ':greenarrow: Must be a good sport\n'
+          + ':greenarrow: No significant previous infractions.\n'
+          + '\n### :warning: Warnings:\n'
+          + ':minus: Troll applications will result in a warn.',
+
+        // Appended to the Status line, so it reads OPEN :check: / CLOSED :redcross:.
+        openEmoji: ':check:',
+        closedEmoji: ':redcross:',
 
         color: 0xF0D2E0,
         buttonLabel: 'Start Application!',
 
-        // An attachment:// URL only works on the message that carries the file.
-        // Put a normal https URL here, or leave blank for no thumbnail.
+        // An attachment:// URL only works on the message carrying the file, and this
+        // panel is edited later without one. Needs a normal https URL.
         thumbnailUrl: '',
 
-        // Where things go. All four are yours to fill in — nothing is guessed,
-        // and /panel applications refuses to post until the first one is set.
-        pendingChannelId: '',
-        acceptedChannelId: '',
-        deniedChannelId: '',
+        pendingChannelId: '1552695955667550288',
+        acceptedChannelId: '1552696057639477319',
+        deniedChannelId: '1552696111838265425',
 
-        // Given on accept. Leave blank to accept without granting anything.
-        acceptedRoleId: '',
+        // Tournament Participant.
+        acceptedRoleId: '1548974794081574932',
 
         // Who may accept or deny. A rank key from `ranks` at the top of this file.
         reviewRank: 'headstaff',
 
-        // How many applications one person may have WAITING at once. Decided ones
-        // do not count, so a denial does not lock somebody out forever.
+        // How many applications one person may have WAITING at once. Decided ones do
+        // not count, so a denial does not lock somebody out forever.
         maxPending: 1,
 
-        // Discord allows at most 5, and a modal cannot be paged. Keep `label`
-        // under 45 characters or Discord rejects the whole form.
+        // Five is Discord's hard limit on a modal, and this uses all five.
+        //
+        // `label` is capped at 45 characters by Discord — it rejects the whole form
+        // over one long one, so the two long questions here carry the full wording in
+        // `placeholder` (capped at 100) and a short label above it.
         questions: [
           {
             id: 'ign',
-            label: 'Your Minecraft username',
+            label: 'What is your IGN?',
             style: 'short',
             required: true,
             maxLength: 16,
             placeholder: 'Exactly as it appears in game',
           },
           {
-            id: 'experience',
-            label: 'Previous tournament experience',
+            id: 'mode',
+            label: 'Best mode out of the 5 in PVPChamps',
+            style: 'short',
+            required: true,
+            maxLength: 60,
+          },
+          {
+            id: 'tier',
+            label: 'Estimated tier in this mode',
+            style: 'short',
+            required: true,
+            maxLength: 60,
+          },
+          {
+            id: 'history',
+            label: 'History with Tempest SMP / FFA',
             style: 'paragraph',
             required: true,
             maxLength: 600,
           },
           {
             id: 'availability',
-            label: 'Your timezone and availability',
+            label: 'Understand the attendance rule?',
             style: 'short',
             required: true,
             maxLength: 100,
-          },
-          {
-            id: 'why',
-            label: 'Why should we pick you?',
-            style: 'paragraph',
-            required: true,
-            maxLength: 600,
+            placeholder: 'Not online when you are supposed to be = disqualified. Do you understand?',
           },
         ],
       },

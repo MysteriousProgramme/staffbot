@@ -74,7 +74,7 @@ module.exports = {
     }
 
     const target = interaction.options.getChannel('channel') ?? interaction.channel;
-    const message = await target.send(applications.buildPanel(interaction.guildId, kind));
+    const message = await target.send(applications.buildPanel(interaction.guild, kind));
 
     // Remembered so /application open and close can edit it later. The ticket panel
     // needs no equivalent because it never changes after it is posted.

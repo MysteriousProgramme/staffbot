@@ -51,19 +51,43 @@ function kindByKey(key) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Turns `:name:` into the server's own `<:name:id>`.
+ *
+ * Config names the emoji rather than carrying its id, because an id is opaque, and
+ * because re-uploading an emoji changes it — which would leave the panel rendering
+ * raw `<:check:123>` text with nothing to say why.
+ *
+ * A name the server does not have is left exactly as it was written. That keeps the
+ * greedy-looking pattern safe: something like a timestamp is not an emoji, does not
+ * match anything, and comes out unchanged.
+ */
+function withEmoji(guild, text) {
+  if (!text || !guild) return text ?? '';
+  return String(text).replace(/:([a-z0-9_]{2,32}):/gi, (whole, name) => {
+    const emoji = guild.emojis.cache.find((e) => e.name === name);
+    return emoji ? emoji.toString() : whole;
+  });
+}
+
+
+/**
  * The panel message for a kind, in its current open/closed state.
  *
  * Built fresh every time rather than stored, so editing the wording in config and
  * running /application open is enough to update every panel that exists.
  */
-function buildPanel(guildId, kind) {
-  const open = db.applicationsOpen(guildId, kind.key);
+function buildPanel(guild, kind) {
+  const open = db.applicationsOpen(guild.id, kind.key);
+  const mark = open ? kind.openEmoji : kind.closedEmoji;
 
   const embed = new EmbedBuilder()
     .setColor(kind.color ?? 0x5865f2)
+    // Custom emoji do not render in a title, only in a description, so the title
+    // is left plain rather than quietly dropping whatever was put in it.
     .setTitle(kind.name)
     .setDescription(
-      `${kind.description ?? ''}\n\n**Status:** ${open ? 'OPEN' : 'CLOSED'}`.trim()
+      withEmoji(guild, `${kind.description ?? ''}\n\n**Status:** `
+        + `${open ? 'OPEN' : 'CLOSED'}${mark ? ` ${mark}` : ''}`).trim()
     );
 
   // attachment:// only resolves against a file on the same message, and this
@@ -90,8 +114,8 @@ function buildPanel(guildId, kind) {
  * every open and close would spend its time failing against messages that will never
  * come back.
  */
-async function refreshPanels(client, guildId, kind) {
-  const rows = db.listAppPanels(guildId, kind.key);
+async function refreshPanels(client, guild, kind) {
+  const rows = db.listAppPanels(guild.id, kind.key);
   let edited = 0;
   let forgotten = 0;
 
@@ -102,7 +126,7 @@ async function refreshPanels(client, guildId, kind) {
       // eslint-disable-next-line no-await-in-loop
       const message = await channel.messages.fetch(row.message_id);
       // eslint-disable-next-line no-await-in-loop
-      await message.edit(buildPanel(guildId, kind));
+      await message.edit(buildPanel(guild, kind));
       edited++;
     } catch {
       db.forgetAppPanel(row.message_id);
