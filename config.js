@@ -109,7 +109,8 @@ const config = {
         openEmoji: ':check:',
         closedEmoji: ':redcross:',
 
-        color: 0xF0D2E0,
+        // The strip down the left of the embed. Matches the panel art.
+        color: 0xF0D060,
         buttonLabel: 'Start Application!',
 
         // A file in the assets/ folder at the top of this repo. Uploaded with the
