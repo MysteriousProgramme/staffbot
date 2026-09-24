@@ -14,8 +14,10 @@
 
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags,
+  ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder,
 } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
 const config = require('../config');
 const db = require('./db');
@@ -70,6 +72,25 @@ function withEmoji(guild, text) {
 }
 
 
+/** Where a kind's own image lives. Kept out of src/ so it is obvious what it is for. */
+const ASSETS = path.join(__dirname, '..', 'assets');
+
+/**
+ * The file behind `thumbnailFile`, or null when there is not one.
+ *
+ * Checked on every draw rather than cached at boot, so dropping the png in and
+ * running /application open is enough — no restart to make an image appear.
+ *
+ * The name is taken as a basename on purpose. This value comes from config rather
+ * than from a user, but a path that can climb out of the folder is the kind of thing
+ * that stops being harmless the moment somebody makes config editable elsewhere.
+ */
+function assetFile(name) {
+  if (!name) return null;
+  const file = path.join(ASSETS, path.basename(String(name)));
+  return fs.existsSync(file) ? file : null;
+}
+
 /**
  * The panel message for a kind, in its current open/closed state.
  *
@@ -90,9 +111,18 @@ function buildPanel(guild, kind) {
         + `${open ? 'OPEN' : 'CLOSED'}${mark ? ` ${mark}` : ''}`).trim()
     );
 
-  // attachment:// only resolves against a file on the same message, and this
-  // message is edited later without one, so it would break on the first edit.
-  if (kind.thumbnailUrl && /^https?:\/\//.test(kind.thumbnailUrl)) {
+  // attachment:// resolves only against a file on the SAME message, so the file has
+  // to ride along on every edit too — see `files` below. Sending the embed without
+  // it would leave a broken image rather than no image.
+  const files = [];
+  const asset = assetFile(kind.thumbnailFile);
+  if (asset) {
+    const name = path.basename(asset);
+    files.push(new AttachmentBuilder(asset, { name }));
+    embed.setThumbnail(`attachment://${name}`);
+  } else if (kind.thumbnailUrl && /^https?:\/\//.test(kind.thumbnailUrl)) {
+    // Falls back rather than failing: a missing file should cost you a thumbnail,
+    // not the panel.
     embed.setThumbnail(kind.thumbnailUrl);
   }
 
@@ -104,7 +134,14 @@ function buildPanel(guild, kind) {
     // "not now", an absent one says "you are in the wrong channel".
     .setDisabled(!open);
 
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(button)] };
+  return {
+    embeds: [embed],
+    components: [new ActionRowBuilder().addComponents(button)],
+    // Re-sent on every edit. Leaving it out would drop the attachment the embed
+    // points at, and the thumbnail would break the first time anyone opened or
+    // closed applications.
+    files,
+  };
 }
 
 /**

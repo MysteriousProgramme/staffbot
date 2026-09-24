@@ -112,8 +112,11 @@ const config = {
         color: 0xF0D2E0,
         buttonLabel: 'Start Application!',
 
-        // An attachment:// URL only works on the message carrying the file, and this
-        // panel is edited later without one. Needs a normal https URL.
+        // A file in the assets/ folder at the top of this repo. Uploaded with the
+        // panel and re-uploaded on every edit, so it survives open and close.
+        thumbnailFile: 'tournament_participant.png',
+
+        // Used only when the file above is missing. A normal https URL.
         thumbnailUrl: '',
 
         pendingChannelId: '1552695955667550288',
