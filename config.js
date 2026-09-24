@@ -74,6 +74,96 @@ const config = {
   },
 
   // ----------------------------------------------------------
+  // APPLICATIONS
+  // ----------------------------------------------------------
+  // Panels people apply through: /panel applications posts one, /application
+  // open and /application close flip it between accepting and not.
+  //
+  // Open/closed lives in the DATABASE, not here, because it is changed mid-season
+  // by people who do not edit files — and because a restart must not quietly
+  // reopen something somebody closed.
+  applications: {
+    enabled: true,
+
+    kinds: [
+      {
+        key: 'tournament',
+
+        // Shown on the panel and on every review card.
+        name: 'Tournament Participant Applications',
+
+        // Custom emoji render in a description but NOT in an embed title, so
+        // anything with <:name:id> belongs in here rather than in `name`.
+        description:
+          'Interested in participating in the seasonal tournaments, make an application, '
+          + 'wait to get accepted and perform your best in the tournament\n'
+          + '\n### Requirements:\n'
+          + 'Must be a good sport\n'
+          + 'No significant previous infractions.\n'
+          + '\n### Warnings:\n'
+          + 'Troll applications will result in a warn.',
+
+        color: 0xF0D2E0,
+        buttonLabel: 'Start Application!',
+
+        // An attachment:// URL only works on the message that carries the file.
+        // Put a normal https URL here, or leave blank for no thumbnail.
+        thumbnailUrl: '',
+
+        // Where things go. All four are yours to fill in — nothing is guessed,
+        // and /panel applications refuses to post until the first one is set.
+        pendingChannelId: '',
+        acceptedChannelId: '',
+        deniedChannelId: '',
+
+        // Given on accept. Leave blank to accept without granting anything.
+        acceptedRoleId: '',
+
+        // Who may accept or deny. A rank key from `ranks` at the top of this file.
+        reviewRank: 'headstaff',
+
+        // How many applications one person may have WAITING at once. Decided ones
+        // do not count, so a denial does not lock somebody out forever.
+        maxPending: 1,
+
+        // Discord allows at most 5, and a modal cannot be paged. Keep `label`
+        // under 45 characters or Discord rejects the whole form.
+        questions: [
+          {
+            id: 'ign',
+            label: 'Your Minecraft username',
+            style: 'short',
+            required: true,
+            maxLength: 16,
+            placeholder: 'Exactly as it appears in game',
+          },
+          {
+            id: 'experience',
+            label: 'Previous tournament experience',
+            style: 'paragraph',
+            required: true,
+            maxLength: 600,
+          },
+          {
+            id: 'availability',
+            label: 'Your timezone and availability',
+            style: 'short',
+            required: true,
+            maxLength: 100,
+          },
+          {
+            id: 'why',
+            label: 'Why should we pick you?',
+            style: 'paragraph',
+            required: true,
+            maxLength: 600,
+          },
+        ],
+      },
+    ],
+  },
+
+  // ----------------------------------------------------------
   // 3. CHANNELS
   // ----------------------------------------------------------
   channels: {

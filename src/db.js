@@ -191,6 +191,43 @@ db.exec(`
     created_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, user_id)
   );
+
+  -- Whether each kind of application is accepting submissions.
+  --
+  -- In the database rather than config.js because /application open and close are
+  -- run mid-season by people who do not edit files, and because a restart must not
+  -- quietly reopen applications somebody closed.
+  CREATE TABLE IF NOT EXISTS application_state (
+    guild_id   TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    is_open    INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    updated_by TEXT,
+    PRIMARY KEY (guild_id, kind)
+  );
+
+  -- Every panel message that has been posted, so open and close can edit them all.
+  --
+  -- The ticket panel needs no equivalent: it is stateless, and reposting replaces
+  -- it. This one shows OPEN or CLOSED, so a panel left behind in another channel
+  -- showing the wrong answer is worse than no panel at all.
+  CREATE TABLE IF NOT EXISTS application_panels (
+    message_id TEXT PRIMARY KEY,
+    guild_id   TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS applications (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    user_tag   TEXT,
+    answers    TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 
@@ -241,6 +278,16 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_tickets_opener ON tickets (guild_id, ope
 ensureColumns('staff', {
   trial_kind: 'TEXT',
   trial_from_rank: 'TEXT',
+});
+
+// A decision is a fact about the application, not a separate record. Keeping it on
+// the row is also what lets "has this person already applied" mean "and is it still
+// pending", which is the question the open-limit actually asks.
+ensureColumns('applications', {
+  status: "TEXT NOT NULL DEFAULT 'pending'",
+  decided_by: 'TEXT',
+  decided_at: 'INTEGER',
+  review_message_id: 'TEXT',
 });
 
 ensureColumns('adjustments', {
@@ -560,6 +607,48 @@ const stmts = {
   ),
 
   // ---- game links ----
+  getAppState: db.prepare(
+    'SELECT * FROM application_state WHERE guild_id = ? AND kind = ?'
+  ),
+  setAppState: db.prepare(`
+    INSERT INTO application_state (guild_id, kind, is_open, updated_at, updated_by)
+    VALUES (@guild_id, @kind, @is_open, @updated_at, @updated_by)
+    ON CONFLICT (guild_id, kind) DO UPDATE SET
+      is_open = @is_open, updated_at = @updated_at, updated_by = @updated_by
+  `),
+
+  addAppPanel: db.prepare(`
+    INSERT INTO application_panels (message_id, guild_id, kind, channel_id, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (message_id) DO NOTHING
+  `),
+  listAppPanels: db.prepare(
+    'SELECT * FROM application_panels WHERE guild_id = ? AND kind = ?'
+  ),
+  dropAppPanel: db.prepare('DELETE FROM application_panels WHERE message_id = ?'),
+
+  addApplication: db.prepare(`
+    INSERT INTO applications (guild_id, kind, user_id, user_tag, answers, created_at)
+    VALUES (@guild_id, @kind, @user_id, @user_tag, @answers, @created_at)
+  `),
+  countApplications: db.prepare(
+    'SELECT COUNT(*) AS n FROM applications WHERE guild_id = ? AND kind = ? AND user_id = ?'
+  ),
+  countPendingApplications: db.prepare(
+    `SELECT COUNT(*) AS n FROM applications
+     WHERE guild_id = ? AND kind = ? AND user_id = ? AND status = 'pending'`
+  ),
+  getApplication: db.prepare('SELECT * FROM applications WHERE id = ?'),
+  setApplicationReviewMessage: db.prepare(
+    'UPDATE applications SET review_message_id = ? WHERE id = ?'
+  ),
+  // Conditional on still being pending, so two reviewers clicking at the same moment
+  // cannot both "decide" it — the second one changes no rows and is told so.
+  decideApplication: db.prepare(
+    `UPDATE applications SET status = ?, decided_by = ?, decided_at = ?
+     WHERE id = ? AND status = 'pending'`
+  ),
+
   putLink: db.prepare(`
     INSERT INTO game_links (guild_id, ign_lower, ign, user_id, linked_by, created_at)
     VALUES (@guild_id, @ign_lower, @ign, @user_id, @linked_by, @created_at)
@@ -842,6 +931,56 @@ module.exports = {
     if (stmts.revokeAdjustment.run(now(), by, id).changes === 0) return null;
     return row;
   },
+
+  // ---------------- applications ----------------
+  /** Whether a kind of application is open. Unknown kinds are closed, not open. */
+  applicationsOpen: (guildId, kind) =>
+    stmts.getAppState.get(guildId, kind)?.is_open === 1,
+
+  setApplicationsOpen(guildId, kind, open, byUserId) {
+    stmts.setAppState.run({
+      guild_id: guildId,
+      kind,
+      is_open: open ? 1 : 0,
+      updated_at: now(),
+      updated_by: byUserId ?? null,
+    });
+  },
+
+  rememberAppPanel: (guildId, kind, channelId, messageId) =>
+    stmts.addAppPanel.run(messageId, guildId, kind, channelId, now()),
+  listAppPanels: (guildId, kind) => stmts.listAppPanels.all(guildId, kind),
+  forgetAppPanel: (messageId) => stmts.dropAppPanel.run(messageId).changes > 0,
+
+  addApplication(guildId, kind, userId, userTag, answers) {
+    return stmts.addApplication.run({
+      guild_id: guildId,
+      kind,
+      user_id: userId,
+      user_tag: userTag ?? null,
+      answers: JSON.stringify(answers),
+      created_at: now(),
+    }).lastInsertRowid;
+  },
+  applicationCount: (guildId, kind, userId) =>
+    stmts.countApplications.get(guildId, kind, userId).n,
+  pendingApplicationCount: (guildId, kind, userId) =>
+    stmts.countPendingApplications.get(guildId, kind, userId).n,
+
+  getApplication(id) {
+    const row = stmts.getApplication.get(id);
+    if (!row) return null;
+    // Stored as JSON because the questions are config and change; a column per
+    // question would need a migration every time somebody reworded one.
+    return { ...row, answers: JSON.parse(row.answers) };
+  },
+
+  setApplicationReviewMessage: (id, messageId) =>
+    stmts.setApplicationReviewMessage.run(messageId, id).changes > 0,
+
+  /** Returns false if somebody else decided it first. */
+  decideApplication: (id, status, byUserId) =>
+    stmts.decideApplication.run(status, byUserId, now(), id).changes > 0,
 
   // ---------------- Minecraft name links ----------------
   linkGameName(guildId, ign, userId, linkedBy) {

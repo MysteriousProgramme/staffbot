@@ -52,6 +52,7 @@ const tracking = require('./tracking');
 const ticketWatch = require('./ticketWatch');
 const tickets = require('./tickets');
 const ticketPanel = require('./ticketPanel');
+const applications = require('./applications');
 const gameChat = require('./gameChat');
 const trialScheduler = require('./trialScheduler');
 const startupChecks = require('./startupChecks');
@@ -158,9 +159,24 @@ console.log(`[commands] loaded ${client.commands.size}: ${[...client.commands.ke
 
 // ---- interactions ----
 client.on(Events.InteractionCreate, async (interaction) => {
-  // Buttons, dropdowns and modals. Everything with a custom ID belongs to
-  // the ticket system today; handle() ignores anything that does not.
+  // Autocomplete arrives as its own interaction type and must be answered within
+  // three seconds, or the option box spins forever with no error anywhere.
+  if (interaction.isAutocomplete()) {
+    const owner = client.commands.get(interaction.commandName);
+    if (owner?.autocomplete) {
+      try {
+        await owner.autocomplete(interaction);
+      } catch (e) {
+        console.error(`[autocomplete] ${interaction.commandName}: ${e.message}`);
+      }
+    }
+    return;
+  }
+
+  // Buttons, dropdowns and modals. Each router claims only its own custom IDs and
+  // returns false for anything else, so the order here does not decide ownership.
   if (!interaction.isChatInputCommand()) {
+    if (await applications.handle(interaction)) return;
     await ticketPanel.handle(interaction);
     return;
   }
