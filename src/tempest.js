@@ -41,6 +41,17 @@ const SQL = {
     `INSERT INTO tempest_link_request
        (request_key, action, discord_id, discord_name, payload, created_at, status)
      VALUES (?, 'ADMIN_LINK', ?, ?, ?, ?, 'PENDING')`,
+  // Same shape, different verb. Kept as separate statements rather than one with the
+  // action interpolated, so a typo is a missing property rather than a row the plugin
+  // answers with "unknown action" three seconds later.
+  insertAltAdd:
+    `INSERT INTO tempest_link_request
+       (request_key, action, discord_id, discord_name, payload, created_at, status)
+     VALUES (?, 'ALT_ADD', ?, ?, ?, ?, 'PENDING')`,
+  insertAltRemove:
+    `INSERT INTO tempest_link_request
+       (request_key, action, discord_id, discord_name, payload, created_at, status)
+     VALUES (?, 'ALT_REMOVE', ?, ?, ?, ?, 'PENDING')`,
   readLink:
     'SELECT status, result_code, result_message FROM tempest_link_request WHERE id = ?',
   readAccount: 'SELECT uuid, name FROM tempest_link WHERE discord_id = ?',
@@ -271,6 +282,22 @@ function explainLink(result, player) {
   }
 }
 
+/**
+ * Adds or removes an alt account the owner may also join on.
+ *
+ * Not a second link — the plugin keeps one link per Discord account, because the record
+ * hangs off it. This grants passage through the join gate and nothing else, so the alt
+ * plays while the history stays on the main account.
+ */
+async function setAlt(staffDiscordId, ownerDiscordId, ownerDiscordName, playerName, add) {
+  const key = requestKey();
+  const payload = `player=${playerName},actor=${staffDiscordId}`;
+  const result = await query(add ? SQL.insertAltAdd : SQL.insertAltRemove, [
+    key, ownerDiscordId, ownerDiscordName || null, payload, Date.now(),
+  ]);
+  return awaitLinkResult(result.insertId);
+}
+
 async function sendLinkCode(discordId, discordName, payload) {
   const result = await query(SQL.insertLink, [
     requestKey(), discordId, discordName || null, payload, Date.now(),
@@ -335,7 +362,8 @@ async function close() {
 }
 
 module.exports = {
-  enabled, credentials, tableExists, run, redeemLinkCode, adminLink, explainLink, linkedAccount, check, close, SEP, SQL, encodeArgs,
+  enabled, credentials, tableExists, run, redeemLinkCode, adminLink, setAlt, explainLink,
+  linkedAccount, check, close, SEP, SQL, encodeArgs,
   // Exposed so roleSync can write its own desired-state rows without a second pool.
   query,
 };

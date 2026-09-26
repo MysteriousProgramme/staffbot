@@ -61,6 +61,7 @@ test('every table the bot uses exists', () => {
     .map((r) => r.name);
   for (const t of [
     'tempest_command_request', 'tempest_link_request', 'tempest_link', 'tempest_role_sync',
+  'tempest_link_alt',
   ]) {
     assert.ok(names.includes(t), `missing table ${t}`);
   }
@@ -205,6 +206,49 @@ test('lifting a punishment is never harder than imposing it', () => {
     assert.ok(index(rules[lift]) <= index(rules[impose]),
       `/${lift} (${rules[lift]}) must not outrank /${impose} (${rules[impose]})`);
   }
+});
+
+test("the alt insert fits the plugin's columns", () => {
+  const info = db
+    .prepare(tempest.SQL.insertAltAdd)
+    .run('key-alt', '222222222222222222', 'target#0002',
+      'player=Notch_Alt,actor=111111111111111111', Date.now());
+  assert.strictEqual(info.changes, 1);
+
+  const row = db.prepare(tempest.SQL.readLink).get(info.lastInsertRowid);
+  assert.strictEqual(row.status, 'PENDING');
+});
+
+test('an alt row is keyed on uuid, so a rename cannot hand the allowance to someone else', () => {
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO tempest_link_alt (uuid, discord_id, name, added_by, added_at)
+     VALUES (?,?,?,?,?)`
+  ).run('11111111-1111-1111-1111-111111111111', '222222222222222222', 'Notch_Alt', 'staff', now);
+
+  // The gate looks up by uuid. Storing the name as the key would mean a player who
+  // renames away frees their allowance for whoever takes the name next.
+  const row = db
+    .prepare('SELECT discord_id, name FROM tempest_link_alt WHERE uuid = ?')
+    .get('11111111-1111-1111-1111-111111111111');
+  assert.strictEqual(row.discord_id, '222222222222222222');
+  assert.strictEqual(row.name, 'Notch_Alt');
+});
+
+test('one account cannot be an alt of two people', () => {
+  // uuid is the primary key, so a second owner replaces rather than duplicates. Two
+  // rows would make the gate's answer depend on which one it read first.
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO tempest_link_alt (uuid, discord_id, name, added_by, added_at)
+           VALUES (?,?,?,?,?)`
+        )
+        .run('11111111-1111-1111-1111-111111111111', '999999999999999999', 'Notch_Alt',
+          'staff', Date.now()),
+    /UNIQUE|PRIMARY/i
+  );
 });
 
 test('a bare link code is still sent when nobody is exempt', () => {

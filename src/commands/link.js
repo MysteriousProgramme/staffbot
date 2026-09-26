@@ -168,15 +168,44 @@ async function set(interaction) {
   // why.
   if (tempest.enabled()) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    let result;
+
+    // First account becomes their link; any after that becomes an alt.
+    //
+    // The plugin keeps one link per Discord account on purpose — the punishment record,
+    // the identity and what a relink carries across all hang off it, and two links would
+    // make "which account does this ban attach to" a question with no answer. An alt gets
+    // through the join gate instead, which is the part somebody with a second account
+    // actually needs, and leaves the record where it belongs.
+    let held = null;
     try {
-      result = await tempest.adminLink(interaction.user.id, user.id, user.tag, ign);
+      held = await tempest.linkedAccount(user.id);
+    } catch {
+      // Treated as "no link", so the attempt below decides rather than this lookup. The
+      // plugin refuses a second link anyway, so guessing wrong costs a clear error and
+      // not a wrong write.
+    }
+
+    let result;
+    const asAlt = Boolean(held?.name) && held.name.toLowerCase() !== ign.toLowerCase();
+    try {
+      result = asAlt
+        ? await tempest.setAlt(interaction.user.id, user.id, user.tag, ign, true)
+        : await tempest.adminLink(interaction.user.id, user.id, user.tag, ign);
     } catch (e) {
       result = { ok: false, message: `Could not reach the Minecraft server: ${e.message}` };
     }
-    lines.push(result.ok
-      ? 'Linked on the Minecraft server too, so they can join now.'
-      : `**Not linked on the Minecraft server.** ${tempest.explainLink(result, ign)}`);
+
+    if (result.ok && asAlt) {
+      lines.push(
+        `Added as an **alt** of **${held.name}**, so they can join on it.`,
+        '_Punishments and history stay on their linked account._'
+      );
+    } else if (result.ok) {
+      lines.push('Linked on the Minecraft server too, so they can join now.');
+    } else {
+      lines.push(`**${asAlt ? 'Alt not added' : 'Not linked'} on the Minecraft server.** `
+        + tempest.explainLink(result, ign));
+    }
   } else {
     lines.push('_The Minecraft integration is off, so this only affects scoring._');
   }
