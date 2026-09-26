@@ -92,9 +92,7 @@ async function redeem(interaction) {
   }
 
   if (!result.ok) {
-    return interaction.editReply(
-      result.message || 'That code is not valid, or it has expired. Rejoin for a new one.'
-    );
+    return interaction.editReply(tempest.explainLink(result));
   }
 
   // The plugin is now the source of truth for the link. The bot keeps its own IGN map for
@@ -178,7 +176,7 @@ async function set(interaction) {
     }
     lines.push(result.ok
       ? 'Linked on the Minecraft server too, so they can join now.'
-      : `**Not linked on the Minecraft server.** ${result.message || 'The server refused it.'}`);
+      : `**Not linked on the Minecraft server.** ${tempest.explainLink(result, ign)}`);
   } else {
     lines.push('_The Minecraft integration is off, so this only affects scoring._');
   }

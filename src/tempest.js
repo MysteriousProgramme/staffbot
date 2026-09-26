@@ -223,6 +223,54 @@ async function adminLink(staffDiscordId, targetDiscordId, targetDiscordName, pla
   return awaitLinkResult(result.insertId);
 }
 
+/**
+ * Turns the plugin's answer into a sentence.
+ *
+ * `result_message` is a DETAIL, not an explanation — a bare username for
+ * DISCORD_ALREADY_LINKED, a bare duration for COOLDOWN. Shown raw it reads as a
+ * non-sequitur: "Not linked on the Minecraft server. Waffledd", or just "23h 16m".
+ * The code says what happened, so the sentence is built here and the detail is
+ * dropped into it.
+ *
+ * `player` is only known on the admin path, so it is optional.
+ */
+function explainLink(result, player) {
+  const detail = result.message ? String(result.message).trim() : '';
+  const who = player ? `**${player}**` : 'That account';
+
+  switch (result.code) {
+    case 'INVALID_CODE':
+      return 'That code is not valid, or it has expired. Rejoin the server for a new one.';
+
+    case 'DISCORD_ALREADY_LINKED':
+      // The cap is one and the plugin does not make it tunable, so say what to do
+      // rather than implying there is a setting to change.
+      return `Already linked to **${detail || 'another account'}**. A Discord account can `
+        + 'hold one Minecraft account at a time — unlink that one first, and the punishment '
+        + 'history follows across.';
+
+    case 'ACCOUNT_ALREADY_LINKED':
+      return `${who} is already linked to ${detail || 'another Discord account'}.`;
+
+    case 'COOLDOWN':
+      return `Relink cooldown — ${detail || 'a while'} left before this Discord account may `
+        + 'link a different Minecraft account.';
+
+    case 'RATE_LIMITED':
+      return 'Too many failed attempts. Wait a few minutes and try again.';
+
+    case 'NOT_LINKED':
+      return `${who} has no link to change.`;
+
+    case 'TIMEOUT':
+      return 'The Minecraft server did not answer in time. It may still have worked — check '
+        + 'before trying again.';
+
+    default:
+      return detail || 'The Minecraft server refused it.';
+  }
+}
+
 async function sendLinkCode(discordId, discordName, payload) {
   const result = await query(SQL.insertLink, [
     requestKey(), discordId, discordName || null, payload, Date.now(),
@@ -287,7 +335,7 @@ async function close() {
 }
 
 module.exports = {
-  enabled, credentials, tableExists, run, redeemLinkCode, adminLink, linkedAccount, check, close, SEP, SQL, encodeArgs,
+  enabled, credentials, tableExists, run, redeemLinkCode, adminLink, explainLink, linkedAccount, check, close, SEP, SQL, encodeArgs,
   // Exposed so roleSync can write its own desired-state rows without a second pool.
   query,
 };
